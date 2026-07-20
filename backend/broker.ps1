@@ -311,7 +311,18 @@ function HasPattern {
 
 function Row2El { param($r) if ($r) { $r.El } else { $null } }
 
-function ModelBtn  { Row2El (Walk | Where-Object { $_.Ct -eq 'Button' -and $_.Nm -match $RX_MODEL } | Select-Object -First 1) }
+# The name alone is not enough for the model button: the sidebar precedes it in
+# document order, and a conversation whose auto-generated title starts with a
+# model name ("Fable 5 idee") would be matched first and break every command.
+# The model button is the one that opens a menu, so demand ExpandCollapse --
+# session rows do not have it. The pattern probe is a cross-process call, but
+# only buttons whose name already matches pay it (normally exactly one).
+function ModelBtn {
+    Row2El (Walk | Where-Object {
+        $_.Ct -eq 'Button' -and $_.Nm -match $RX_MODEL -and
+        (HasPattern $_.El ([System.Windows.Automation.ExpandCollapsePattern]::Pattern))
+    } | Select-Object -First 1)
+}
 function UsageBtn  { Row2El (Walk | Where-Object { $_.Ct -eq 'Button' -and $_.Nm -match $RX_USAGE } | Select-Object -First 1) }
 function SliderEl  { Row2El (Walk | Where-Object { $_.Ct -eq 'Slider' } | Select-Object -First 1) }
 
