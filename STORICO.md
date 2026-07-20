@@ -20,6 +20,56 @@ stanno in [PROJECT.md](PROJECT.md).
 
 ---
 
+## 2026-07-20 (sessione 6 — backend: i due pezzi mancanti del broker)
+
+- `SETUP` — Aggiunto il comando **`capabilities`**: una sola risposta con marcia
+  innestata, effort corrente, **numero di marce del modello attivo**, elenco dei
+  modelli con `enabled`/`selected`, e telemetria del cruscotto. Provato sull'app
+  viva: 7 modelli letti, `Opus 4.8 / Alto`, 6 marce (cursore 0-5), contesto 9% /
+  piano 32%, in 9,9 s.
+- `DECISIONE` — **`capabilities` risponde solo per il modello attivo, non per
+  tutti.** Motivo: una tabella completa richiederebbe di cambiare marcia sette
+  volte a ogni chiamata, e sarebbe una *dichiarazione* — proprio ciò che il
+  principio "il backend rileva, non dichiara" vieta. La GUI richiama il comando
+  dopo ogni `setModel` e ridisegna la griglia.
+- `DECISIONE` — **Fallimento parziale riportato per sezione invece di far
+  fallire tutto il comando.** `capabilities` torna quel che è riuscita a leggere
+  più una lista `errors`. Motivo: una GUI che ha i modelli ma non la corsa
+  dell'effort può disegnare qualcosa di onesto; un errore secco la lascia senza
+  nulla da disegnare.
+- `SETUP` — Aggiunto il **riaggancio automatico**: prima di ogni comando il
+  broker verifica di essere ancora legato alla finestra giusta (handle valido →
+  processo vivo e di nome `Claude` → radice UIA che risponde) e, se l'aggancio è
+  caduto, si rilega da solo emettendo l'evento `reattached` (o `detached` se
+  l'app non c'è). Prima restava legato a una finestra morta e ogni comando
+  falliva finché non lo si riavviava a mano.
+- `DECISIONE` — **Il riaggancio non rilancia l'app.** `Attach` prende un
+  parametro `$Launch`: vero all'avvio, falso al riaggancio. Motivo: se l'utente
+  ha chiuso Claude Desktop apposta, riaprirgliela addosso è peggio di un errore
+  chiaro; la GUI accende una spia invece di indovinare.
+- `DECISIONE` — **Non si controlla se `FindClaudeHwnd` restituisce ancora *il
+  nostro* handle.** Restituisce la prima finestra Claude che incontra: con due
+  finestre aperte quel confronto oscillerebbe e il broker si riaggancerebbe a
+  ogni comando.
+- `SCOPERTA` — **Il collaudo onesto del riaggancio non è eseguibile dall'interno.**
+  Il broker si aggancia al processo `Claude`, che è la stessa app dentro cui gira
+  chi lo pilota: chiuderla per provare il recupero chiude anche il collaudo.
+  Aggiunto il comando diagnostico `forceDetach`, che butta via l'aggancio senza
+  toccare l'app, e `reattach.js` che lo usa — 3 recuperi su 3, ~1,4 s l'uno.
+  Copre la metà cara del recupero (ritrovare la finestra, risvegliare l'albero di
+  accessibilità), **non** il rilevamento della morte del processo.
+- `SETUP` — Scritto `detachtest.js` per il ramo non coperto: va lanciato **da un
+  terminale esterno** con l'app aperta, poi si chiude e si riapre Claude Desktop
+  a mano. Nota: si parte a app *aperta* perché all'avvio il broker, se non la
+  trova, la lancia lui. **Non ancora eseguito.**
+- `SETUP` — Aggiunto `capabilities.js` (collaudo di sola lettura) e l'inoltro
+  degli eventi del broker al client Node (`onEvent`), così la GUI vede
+  `attached`/`reattached`/`detached` senza interrogare.
+- `SCOPERTA` — **PowerShell 5.1 collassa un array di un elemento in un oggetto
+  singolo** nel JSON. `Broker.capabilities()` normalizza `models` ed `errors` con
+  `[].concat(...)`: se un giorno l'app offrisse un solo modello, la GUI non deve
+  accorgersene.
+
 ## 2026-07-20 (sessione 5 — backend: UIA Broker costruito e mappa del cambio)
 
 - `SETUP` — Costruito il **UIA Broker** in `backend/` come demone persistente

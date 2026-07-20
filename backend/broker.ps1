@@ -33,6 +33,7 @@ public class W {
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd, int cmd);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern int GetWindowTextLength(IntPtr hwnd);
+    [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hwnd);
     // Deliberately no keybd_event / SendInput: synthetic keystrokes land in the
     // Claude window as real input, and Escape there cancels the running turn.
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
@@ -153,10 +154,16 @@ function IsSel {
 
 # -- Attach -------------------------------------------------------------------
 function Attach {
+    # $Launch only applies at startup. A re-attach never launches the app: if the
+    # user closed Claude Desktop, reopening it uninvited is worse than an honest
+    # error, and the GUI can say "l'app e' chiusa" instead.
+    param([bool]$Launch = $true)
+
     $p0 = [uint32]0
     $h  = [W]::FindClaudeHwnd([ref]$p0)
 
     if ($h -eq [IntPtr]::Zero) {
+        if (-not $Launch) { Log "Claude Desktop not running"; return $false }
         Log "Claude Desktop not found - launching"
         Start-Process "shell:AppsFolder\Claude_pzs8sxrjxfjjc!Claude"
         Start-Sleep -Seconds 4
@@ -182,6 +189,56 @@ function Attach {
         if ($named -gt 40) { return $true }
         Start-Sleep -Seconds 2
     }
+    return $false
+}
+
+# -- Re-attach ----------------------------------------------------------------
+# The broker used to attach once and stay bound to that window handle for life.
+# Close and reopen Claude Desktop and every command from then on failed with an
+# obscure UIA error, and the only cure was restarting the broker by hand. So
+# check liveness before each command and rebind when the window is gone.
+#
+# Three checks, cheapest first, because this runs on every single command:
+#   1. the handle still names a window,
+#   2. the process we attached to is still alive and still Claude,
+#   3. the UIA root still answers a property read.
+# The third is what catches a window that Windows still lists but whose
+# accessibility tree died with the renderer. One cross-process read, ~1 ms --
+# a full tree walk here would cost a second per command.
+#
+# Deliberately NOT checked: whether FindClaudeHwnd still returns *our* handle.
+# It returns the first Claude window it meets, so with two windows open that
+# comparison would flip constantly and re-attach on every command.
+function IsAlive {
+    if ($script:hwnd -eq [IntPtr]::Zero -or $null -eq $script:root) { return $false }
+    if (-not [W]::IsWindow($script:hwnd)) { return $false }
+    try {
+        $p = Get-Process -Id ([int]$script:pid0) -ErrorAction Stop
+        if ($p.ProcessName -ne 'Claude') { return $false }
+    } catch { return $false }
+    try { $null = $script:root.Current.Name } catch { return $false }
+    return $true
+}
+
+# Returns $false when the app is genuinely gone; the caller answers with an
+# error instead of pretending. Emits an event either way so a GUI can show the
+# state without polling.
+function EnsureAttached {
+    if (IsAlive) { return $true }
+
+    $was = [int]$script:pid0
+    Log "attachment lost (was pid=$was) - reattaching"
+    InvalidateWalk
+    $script:root = $null
+    $script:hwnd = [IntPtr]::Zero
+
+    if (Attach $false) {
+        Send @{ event = 'reattached'; pid = [int]$script:pid0; previousPid = $was }
+        Log "Reattached to Claude pid=$($script:pid0)"
+        return $true
+    }
+
+    Send @{ event = 'detached'; message = 'Claude Desktop is not running' }
     return $false
 }
 
@@ -780,6 +837,65 @@ function SetSliderTo {
     return @{ value = $v; label = $null; error = 'could not set slider' }
 }
 
+# Everything the GUI needs to draw the lever, in one round trip: which models
+# the app offers right now, which one is engaged, and how many detents the
+# engaged model's ladder has.
+#
+# Why one command instead of letting the GUI call readGear + listModels +
+# effortRange itself: each of those opens and closes a popup, so three calls
+# cost three popup cycles and can interleave with the user's own clicking. And a
+# frontend that has to ask three questions is tempted to cache the answers and
+# hardcode a grid -- which is exactly what section 4.1 of PROJECT.md forbids.
+#
+# It reports the ladder of the CURRENT model only, never a table of all of them.
+# The GUI is meant to call this again after every setModel and redraw. A full
+# table would mean switching model seven times to build it, and it would be a
+# declaration -- the thing the broker must not do.
+#
+# Partial failure is reported per section rather than failing the whole command:
+# a GUI that got the model list but not the effort range can still draw
+# something honest, whereas an error leaves it with nothing to draw at all.
+function Op-Capabilities {
+    $errors = New-Object System.Collections.Generic.List[string]
+
+    $gear = $null
+    try { $gear = Op-ReadGear } catch { $errors.Add("readGear: $($_.Exception.Message)") }
+    # Without the model button there is no lever at all, and every section below
+    # depends on it. This one is fatal.
+    if ($null -eq $gear) { throw "capabilities: model button not found (is a conversation open?)" }
+
+    $models = @()
+    try { $models = @(Op-ListModels) } catch { $errors.Add("listModels: $($_.Exception.Message)") }
+
+    if ($gear.hasEffort) {
+        $effort = @{ available = $false; reason = 'effortRange failed' }
+        try { $effort = Op-EffortRange } catch { $errors.Add("effortRange: $($_.Exception.Message)") }
+    } else {
+        # Haiku. Not an error: an absent ladder is a real state the GUI must
+        # render (the lever loses its splitter).
+        $effort = @{ available = $false; reason = 'model has no effort control' }
+    }
+
+    $usage = $null
+    try { $usage = Op-ReadUsage } catch { $errors.Add("readUsage: $($_.Exception.Message)") }
+
+    # Detent count, not slider span: 0..5 is six gears. The GUI draws this many
+    # positions and nothing more.
+    $gears = 0
+    if ($effort.available) { $gears = [int]$effort.max - [int]$effort.min + 1 }
+
+    @{
+        model       = $gear.model
+        effort      = $gear.effort
+        hasEffort   = [bool]$gear.hasEffort
+        gears       = $gears
+        effortRange = $effort
+        models      = $models
+        usage       = $usage
+        errors      = @($errors)
+    }
+}
+
 function Op-SetModel {
     param([string]$alias)
     if (-not (OpenModelPopup)) { ClosePopups; throw "Model menu did not open" }
@@ -875,6 +991,14 @@ while ($true) {
     InvalidateWalk
     Log "-> $cmd (id=$id)"
 
+    # The app may have been closed and reopened since the last command. Rebind
+    # before touching anything, rather than failing with a UIA error that says
+    # nothing about the real cause.
+    if (-not (EnsureAttached)) {
+        Reply-Err $id "Claude Desktop is not running - reopen it and retry"
+        continue
+    }
+
     try {
         switch ($cmd) {
             'enumerate' {
@@ -931,6 +1055,23 @@ while ($true) {
             }
             'effortRange' {
                 Reply-Ok $id (Op-EffortRange)
+            }
+            'capabilities' {
+                Reply-Ok $id (Op-Capabilities)
+            }
+            # Diagnostic: throw away the binding so the NEXT command has to
+            # rebuild it. Exists because the honest test -- closing Claude
+            # Desktop -- also closes whatever is driving the broker when the two
+            # are the same app. This exercises the expensive half of the
+            # recovery (find the window again, wake its a11y tree, re-emit the
+            # event); the cheap half, noticing the window died, is the three
+            # checks in IsAlive.
+            'forceDetach' {
+                $script:root = $null
+                $script:hwnd = [IntPtr]::Zero
+                InvalidateWalk
+                Log "forceDetach: binding dropped on purpose"
+                Reply-Ok $id @{ detached = $true; wasPid = [int]$script:pid0 }
             }
             default {
                 Reply-Err $id "Unknown command: $cmd"

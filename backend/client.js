@@ -8,9 +8,13 @@ const path = require('path');
 const BROKER = path.join(__dirname, 'broker.ps1');
 
 class Broker {
-  constructor({ verbose = false, onLog = null } = {}) {
+  constructor({ verbose = false, onLog = null, onEvent = null } = {}) {
     this.verbose = verbose;
     this.onLog = onLog;
+    // Unsolicited messages from the broker: attached / reattached / detached.
+    // The GUI needs these to show when Claude Desktop went away and came back,
+    // without polling for it.
+    this.onEvent = onEvent;
     this.nextId = 1;
     this.pending = new Map();
     this.ps = null;
@@ -61,9 +65,12 @@ class Broker {
     let msg;
     try { msg = JSON.parse(line); } catch { return; }
 
-    if (msg.event === 'attached') { this._attachResolve?.({ pid: msg.pid }); return; }
-    if (msg.event === 'error')    { this._attachReject?.(new Error(msg.message)); return; }
-    if (msg.event) return;
+    if (msg.event) {
+      if (msg.event === 'attached') this._attachResolve?.({ pid: msg.pid });
+      else if (msg.event === 'error') this._attachReject?.(new Error(msg.message));
+      this.onEvent?.(msg);
+      return;
+    }
 
     const p = this.pending.get(msg.id);
     if (!p) return;
@@ -78,6 +85,22 @@ class Broker {
       this.pending.set(id, { resolve, reject });
       this.ps.stdin.write(JSON.stringify({ id, cmd, ...args }) + '\n');
     });
+  }
+
+  // One round trip, everything the lever needs to draw itself. See Op-Capabilities
+  // in broker.ps1 for why this is one command and not three.
+  //
+  // The lists are normalised here because PowerShell 5.1's JSON serialiser turns
+  // a one-element array into a bare object, so `models` arrives as an array of
+  // seven but would arrive as a lone object if the app ever offered one model.
+  // The GUI must never have to know that.
+  async capabilities() {
+    const c = await this.send('capabilities');
+    return {
+      ...c,
+      models: [].concat(c.models ?? []),
+      errors: [].concat(c.errors ?? []),
+    };
   }
 
   stop() {

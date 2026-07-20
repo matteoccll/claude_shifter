@@ -140,9 +140,9 @@ piano — l'UX va costruita su questa verità, non nasconderla.
 | Switch effort (UIA Slider) | ✅ Provato su tutte le posizioni, con ripristino verificato |
 | **Ladder effort completo** | ✅ **Mappato dal vivo** — vedi §3.1, salvato in `backend/gearbox.json` |
 | Attuazione **senza rubare il focus** | 🟡 Letture focus-free ✅; gli switch alzano comunque l'app ⚠️ |
-| **UIA Broker (M1)** | ✅ [`backend/`](backend/) — demone NDJSON, 9 comandi + diagnostici |
-| Comando unico `capabilities` per la GUI | ⬜ **Prossima azione** — §10 |
-| Riaggancio automatico se l'app si chiude/riapre | ⬜ **Prossima azione** — §10 |
+| **UIA Broker (M1)** | ✅ [`backend/`](backend/) — demone NDJSON, 10 comandi + diagnostici |
+| Comando unico `capabilities` per la GUI | ✅ Provato sull'app viva (9,9 s per risposta completa) |
+| Riaggancio automatico se l'app si chiude/riapre | 🟡 Fatto; provato solo simulando la perdita — vedi §10 |
 | Spec di build | ✅ [SPEC.md](SPEC.md) (⚠️ §2 e §4.1 superati dalla sessione 5: vedi §3 qui) |
 | Prototipo UIA | ✅ [`prototype/`](prototype/) (`uia_shifter.ps1`, `uia_effort_slider.ps1`) |
 | GUI (frontend) | ⬜ In carico all'altro collaboratore |
@@ -154,20 +154,24 @@ piano — l'UX va costruita su questa verità, non nasconderla.
 Due elenchi con statuto diverso: il primo è lavoro concordato e definito, il
 secondo sono idee raccolte che nessuno ha ancora progettato.
 
-### Prossima azione — backend (i due pezzi mancanti)
+### Prossima azione — backend
 
-Il broker funziona ed è provato (§9), ma non è finito. Restano:
+I due pezzi mancanti (comando `capabilities`, riaggancio automatico) sono
+**scritti e funzionanti**. Resta una sola cosa da fare, ed è un collaudo, non
+del codice:
 
-1. **Comando unico `capabilities`.** Oggi la GUI dovrebbe fare tre domande
-   separate (modelli, corsa dell'effort, marcia corrente) per sapere cosa
-   disegnare. Serve una risposta sola che dica, in un colpo: quali modelli offre
-   l'app adesso, quali sono selezionabili, e quante marce ha quello attivo. È il
-   pezzo che rende utilizzabile il principio di §4.1 — senza, il frontend è
-   tentato di scriversi la griglia a mano.
-2. **Riaggancio automatico.** Se l'utente chiude e riapre Claude Desktop, il
-   broker resta agganciato a una finestra che non esiste più e ogni comando
-   fallisce finché non lo si riavvia a mano. Deve accorgersene e riattaccarsi da
-   solo.
+1. **Provare il ramo "app davvero chiusa".** Il riaggancio è stato verificato
+   simulando la perdita con `forceDetach`, non chiudendo l'app: il broker si
+   aggancia al processo `Claude`, che è la stessa app dentro cui gira chi lo
+   pilota, quindi chiuderla chiude anche il collaudo. Il pezzo non coperto è il
+   *rilevamento* della morte del processo. Si prova con
+   `node backend/detachtest.js` **da un terminale esterno**, partendo con l'app
+   aperta e chiudendola/riaprendola a mano. Atteso: evento `detached`, errore in
+   chiaro (`Claude Desktop is not running - reopen it and retry`), nessun crash,
+   e — punto della decisione — **l'app non deve riaprirsi da sola**; poi evento
+   `reattached` con pid nuovo e letture di nuovo funzionanti.
+
+Finché quel collaudo non è fatto, la riga corrispondente in §9 resta gialla.
 
 ### Idee raccolte — frontend / GUI
 
