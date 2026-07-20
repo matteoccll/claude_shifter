@@ -868,11 +868,17 @@ function Op-ProbeEffort {
     $rest = SetSliderTo $original
     ClosePopups
 
+    # The restore check must compare with what the sweep itself read at the
+    # original position: "some label came back" is not a verification (same
+    # trap as the IsAlive check fixed in session 6).
+    $wanted = ($positions | Where-Object { $_.value -eq $original } | Select-Object -First 1).label
+
     @{
         available = $true; min = $min; max = $max
         original  = $original
         restored  = $rest.label
-        restoredOk = ($rest.label -and -not $rest.error)
+        expected  = $wanted
+        restoredOk = (-not $rest.error -and $null -ne $wanted -and $rest.label -eq $wanted)
         positions = $positions
     }
 }
@@ -1029,9 +1035,30 @@ function Op-SetEffort {
 
     $rv.SetValue([double]$level)
     Start-Sleep -Milliseconds 1000
-
+    InvalidateWalk
     $label = StripEffort (Nm (EffortBtn))
+
+    # Verification is mandatory here too: SetValue can fail without throwing,
+    # and reporting ok with the old label inside is a shift never verified.
+    # Read the slider position back. The popup sometimes dismisses itself right
+    # after SetValue, so a failed read is reopened once rather than mistaking a
+    # vanished popup for a failed shift.
+    $now = $null
+    try { $now = [int]$rv.Current.Value } catch {}
+    if ($null -eq $now) {
+        $sl2 = OpenEffortPopup
+        if ($sl2) {
+            try { $now = [int]$sl2.GetCurrentPattern([System.Windows.Automation.RangeValuePattern]::Pattern).Current.Value } catch {}
+        }
+        InvalidateWalk
+        $label = StripEffort (Nm (EffortBtn))
+    }
     ClosePopups
+
+    if ($now -ne $level) {
+        $shown = if ($null -eq $now) { 'unreadable' } else { $now }
+        throw "Effort verify failed: asked for $level, slider reads $shown (label '$label')"
+    }
     @{ effort = $label; min = $min; max = $max }
 }
 
