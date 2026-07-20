@@ -1,6 +1,7 @@
-# Impostazioni personali di Claude Code — non condivise
+# Impostazioni e istruzioni personali di Claude Code — non condivise
 .claude/settings.local.json
 CLAUDE_LOCAL.md
+CLAUDE.local.md
 
 # Pathway CLI/terminale archiviato — solo locale, non su GitHub
 spec for CLI terminal/
