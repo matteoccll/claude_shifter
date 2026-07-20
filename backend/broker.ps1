@@ -600,15 +600,25 @@ function Op-ReadGear {
     @{ model = (Nm $mb); effort = $effort; hasEffort = ($null -ne $eb) }
 }
 
+# The Usage readout has more than one display format. Seen live on 2026-07-20,
+# same machine, hours apart:
+#   "Usage: context 14%, plan 32%"      (percentage)
+#   "Usage: context 127.5k, plan 41%"   (absolute tokens)
+# Parse whichever is there and always return the raw text: the dashboard must
+# not go blind because the readout flipped into its other format. Returns $null
+# only when the button itself is missing.
 function Op-ReadUsage {
     $ub = UsageBtn
     if (-not $ub) { return $null }
     $text = Nm $ub
-    if ($text -notmatch 'context\s+(\d+)%') { return $null }
-    $c = [int]$Matches[1]
-    if ($text -notmatch 'plan\s+(\d+)%') { return $null }
-    $p = [int]$Matches[1]
-    @{ contextPct = $c; planPct = $p }
+
+    $ctxPct = $null; $ctxTok = $null; $planPct = $null
+    if     ($text -match 'context\s+([\d\.,]+)\s*%')    { $ctxPct = [int][double]($Matches[1] -replace ',','.') }
+    elseif ($text -match 'context\s+([\d\.,]+)\s*[kK]') { $ctxTok = [int]([double]($Matches[1] -replace ',','.') * 1000) }
+    elseif ($text -match 'context\s+(\d+)\b')           { $ctxTok = [int]$Matches[1] }
+    if     ($text -match 'plan\s+([\d\.,]+)\s*%')       { $planPct = [int][double]($Matches[1] -replace ',','.') }
+
+    @{ contextPct = $ctxPct; contextTokens = $ctxTok; planPct = $planPct; raw = $text }
 }
 
 function Op-SelectSession {
@@ -922,6 +932,14 @@ function Op-Capabilities {
 
     $usage = $null
     try { $usage = Op-ReadUsage } catch { $errors.Add("readUsage: $($_.Exception.Message)") }
+    # A missing or unreadable dashboard must show up in `errors`, not slip
+    # through as a silent null: the per-section failure report is the whole
+    # point of this command, and this section was the one failing in practice.
+    if ($null -eq $usage) {
+        $errors.Add('readUsage: usage button not found')
+    } elseif ($null -eq $usage.contextPct -and $null -eq $usage.contextTokens) {
+        $errors.Add("readUsage: unrecognised format: '$($usage.raw)'")
+    }
 
     # Detent count, not slider span: 0..5 is six gears. The GUI draws this many
     # positions and nothing more.
@@ -1074,7 +1092,7 @@ while ($true) {
             }
             'readUsage' {
                 $u = Op-ReadUsage
-                if ($null -eq $u) { Reply-Err $id 'readUsage: element not found or unparseable' }
+                if ($null -eq $u) { Reply-Err $id 'readUsage: usage button not found' }
                 else { Reply-Ok $id $u }
             }
             'selectSession' {

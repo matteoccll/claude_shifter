@@ -16,6 +16,17 @@ const { Broker, withDeadline, makeReport } = require('./client');
 const REPORT = makeReport(path.join(__dirname, 'capabilities-report.txt'));
 const say    = (...a) => REPORT.log(...a);
 
+// Il contatore Usage dell'app ha due formati (percentuale o token assoluti):
+// il broker riporta il campo che c'era, qui si mostra quello.
+function fmtUsage(u) {
+  if (!u) return '(non leggibile)';
+  const ctx = u.contextPct != null ? `contesto ${u.contextPct}%`
+            : u.contextTokens != null ? `contesto ${(u.contextTokens / 1000).toFixed(1)}k token`
+            : `contesto ? (grezzo: "${u.raw}")`;
+  const plan = u.planPct != null ? `piano ${u.planPct}%` : 'piano ?';
+  return `${ctx}, ${plan}`;
+}
+
 (async () => {
   withDeadline(180, REPORT, 'capabilities');
   const b = new Broker({ onLog: l => say(l), onEvent: e => say(`[evento] ${JSON.stringify(e)}`) });
@@ -31,7 +42,7 @@ const say    = (...a) => REPORT.log(...a);
   say(`Marcia innestata : ${c.model}`);
   say(`Effort           : ${c.hasEffort ? c.effort : '(questo modello non ha lo splitter)'}`);
   say(`Marce disponibili: ${c.gears}${c.effortRange.available ? ` (cursore ${c.effortRange.min}-${c.effortRange.max}, ora ${c.effortRange.current})` : ` -- ${c.effortRange.reason}`}`);
-  say(`Cruscotto        : ${c.usage ? `contesto ${c.usage.contextPct}%, piano ${c.usage.planPct}%` : '(non leggibile)'}`);
+  say(`Cruscotto        : ${fmtUsage(c.usage)}`);
   say('');
   say(`Modelli offerti dall'app (${c.models.length}):`);
   c.models.forEach(m => say(

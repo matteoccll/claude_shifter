@@ -22,7 +22,10 @@ const { Broker } = require('./client');
 
   try {
     const u = await b.send('readUsage');
-    console.log(`Cruscotto: contesto ${u.contextPct}%  ·  piano ${u.planPct}%\n`);
+    const ctx = u.contextPct != null ? `${u.contextPct}%`
+              : u.contextTokens != null ? `${(u.contextTokens / 1000).toFixed(1)}k token`
+              : `? (grezzo: "${u.raw}")`;
+    console.log(`Cruscotto: contesto ${ctx}  ·  piano ${u.planPct != null ? u.planPct + '%' : '?'}\n`);
   } catch (e) {
     console.log(`Cruscotto: non leggibile (${e.message})\n`);
   }
