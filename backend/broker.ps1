@@ -716,12 +716,17 @@ function OpenSubmenu {
     return $false
 }
 
+# Candidates are MenuItem ONLY, never ListItem. Verified live 2026-07-20: the
+# menu renders as Menu/MenuItem/RadioButton, while the conversation transcript
+# renders its markdown bullets as ListItem -- and those precede the menu in
+# document order, so a ListItem-tolerant finder picks up chat text as if it
+# were a menu entry.
 function ExpandModelSubmenus {
     $opened = 0
     $seen   = New-Object System.Collections.Generic.List[string]
     for ($pass = 0; $pass -lt 4; $pass++) {
         $cand = @(Walk | Where-Object {
-            $_.Ct -match 'MenuItem|ListItem' -and $_.Nm -and $_.Nm -notmatch $RX_MODEL
+            $_.Ct -eq 'MenuItem' -and $_.Nm -and $_.Nm -notmatch $RX_MODEL
         } | Where-Object { -not $seen.Contains($_.Nm) -and (IsSubmenuRow $_) })
 
         if ($cand.Count -eq 0) { break }
@@ -759,8 +764,11 @@ function Op-FastMode {
     $menu = Walk | Where-Object { $_.Ct -eq 'Menu' -and $_.Nm } | Select-Object -First 1
     $title = if ($menu) { $menu.Nm } else { '' }
 
+    # MenuItem only -- a ListItem here is chat content, not a menu entry (see
+    # the note on ExpandModelSubmenus: this finder once returned the text of a
+    # conversation message as "the toggle").
     $toggle = Walk | Where-Object {
-        $_.Ct -match 'MenuItem|ListItem' -and $_.Nm -and $_.Nm -notmatch $RX_MODEL -and -not (IsSubmenuRow $_)
+        $_.Ct -eq 'MenuItem' -and $_.Nm -and $_.Nm -notmatch $RX_MODEL -and -not (IsSubmenuRow $_)
     } | Select-Object -First 1
 
     $state = $null
@@ -775,6 +783,19 @@ function Op-FastMode {
         changed    = $false
     }
 
+    # Refuse to actuate blind. Asking for on/off when the entry is missing
+    # (models without fast mode do not show it) or its state is unreadable
+    # would mean toggling on a guess: with unknown state, "turn it on" can
+    # just as easily turn it off while claiming success. Reading stays fine.
+    if ($null -ne $set -and -not $toggle) {
+        ClosePopups
+        throw "fast mode: no toggle in this model's menu (read-only still works)"
+    }
+    if ($null -ne $set -and $null -eq $state) {
+        ClosePopups
+        throw "fast mode: toggle state unreadable, refusing to actuate blind"
+    }
+
     if ($null -ne $set -and $toggle) {
         $isOn = ($state -eq 'On')
         if ($isOn -ne [bool]$set) {
@@ -786,7 +807,7 @@ function Op-FastMode {
             $r.changed = $true
             $m2 = Walk | Where-Object { $_.Ct -eq 'Menu' -and $_.Nm } | Select-Object -First 1
             $t2 = Walk | Where-Object {
-                $_.Ct -match 'MenuItem|ListItem' -and $_.Nm -and $_.Nm -notmatch $RX_MODEL -and -not (IsSubmenuRow $_)
+                $_.Ct -eq 'MenuItem' -and $_.Nm -and $_.Nm -notmatch $RX_MODEL -and -not (IsSubmenuRow $_)
             } | Select-Object -First 1
             $r.menuTitleAfter = if ($m2) { $m2.Nm } else { '' }
             if ($t2) {
