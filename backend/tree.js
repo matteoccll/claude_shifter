@@ -8,11 +8,12 @@
 
 const fs = require('fs');
 const path = require('path');
-const { Broker } = require('./client');
+const { Broker, withDeadline } = require('./client');
 
 const OUT = path.join(__dirname, 'tree.txt');
 
 (async () => {
+  withDeadline(240, null, 'dump albero');
   const needle = process.argv[2];
   const b = new Broker({ verbose: false });
   await b.start();

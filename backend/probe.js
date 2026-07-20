@@ -2,13 +2,14 @@
 'use strict';
 // Read-only check: does the broker attach and read the app correctly?
 // Changes nothing. Opening the model menu is the only side effect, and it is
-// closed again with Escape.
+// closed again with ExpandCollapse.Collapse (never with synthetic keys).
 //
 //   node backend/probe.js
 
-const { Broker } = require('./client');
+const { Broker, withDeadline } = require('./client');
 
 (async () => {
+  withDeadline(300, null, 'probe');
   const b = new Broker({ verbose: true });
 
   console.log('Avvio broker...\n');

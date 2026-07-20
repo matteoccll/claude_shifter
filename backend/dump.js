@@ -6,9 +6,10 @@
 //   node backend/dump.js            all elements
 //   node backend/dump.js Button     only that control type
 
-const { Broker } = require('./client');
+const { Broker, withDeadline } = require('./client');
 
 (async () => {
+  withDeadline(240, null, 'dump');
   const filter = process.argv[2];
   const b = new Broker({ verbose: false });
   await b.start();

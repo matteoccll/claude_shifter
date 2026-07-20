@@ -44,7 +44,13 @@ class Broker {
     const rl = readline.createInterface({ input: this.ps.stdout, crlfDelay: Infinity });
     rl.on('line', line => this._onLine(line));
 
+    // A spawn failure (PowerShell missing) or an exit before the attach event
+    // must reject start(), not leave the caller hanging until the deadline.
+    // Rejecting an already-settled attach promise is a no-op, so these are
+    // safe after a successful attach too.
+    this.ps.on('error', err => this._attachReject?.(err));
     this.ps.on('close', code => {
+      this._attachReject?.(new Error(`broker exited (code ${code}) before attaching`));
       for (const { reject } of this.pending.values()) {
         reject(new Error(`broker exited (code ${code})`));
       }
@@ -104,7 +110,6 @@ class Broker {
   }
 
   stop() {
-    if (this.watchdog) clearTimeout(this.watchdog);
     this.ps?.stdin.end();
     // The child normally exits on stdin close; make sure a stuck one can never
     // hold the caller open forever.
@@ -130,10 +135,13 @@ function makeReport(file) {
 
 // Kill the whole run after `seconds`, so a hung UIA call surfaces as a written
 // result instead of a command that never returns.
+// Accepts a report from makeReport or null: the console-only diagnostics pass
+// null and still get the timeout message (on stderr) and the exit code.
 function withDeadline(seconds, report, label = 'operazione') {
   const t = setTimeout(() => {
-    report?.log(`\nTIMEOUT: ${label} non ha risposto entro ${seconds}s.`);
-    report?.flush();
+    const msg = `\nTIMEOUT: ${label} non ha risposto entro ${seconds}s.`;
+    if (report?.log) { report.log(msg); report.flush?.(); }
+    else console.error(msg);
     process.exit(2);
   }, seconds * 1000);
   t.unref();

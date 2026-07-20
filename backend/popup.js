@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 'use strict';
 // Diagnostic: open a popup and report what it contains, then close it.
-// Changes nothing -- the popup is dismissed with Escape.
+// Changes nothing -- the popup is dismissed with ExpandCollapse.Collapse
+// (never with synthetic keys: Escape in Claude cancels the running turn).
 //
 //   node backend/popup.js effort
 //   node backend/popup.js model
 
-const { Broker } = require('./client');
+const { Broker, withDeadline } = require('./client');
 
 (async () => {
+  withDeadline(240, null, 'ispezione popup');
   const target = process.argv[2] || 'effort';
   const b = new Broker({ verbose: true });
   await b.start();

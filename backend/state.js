@@ -7,7 +7,7 @@
 const { Broker, withDeadline } = require('./client');
 
 (async () => {
-  withDeadline(120, 'lettura stato');
+  withDeadline(120, null, 'lettura stato');
   const t0 = Date.now();
   const b = new Broker({ verbose: false });
   await b.start();
