@@ -44,7 +44,7 @@ sessione 5, che ha corretto diverse voci date per scontate prima):
 | Effort corrente | `Button 'Impegno: Alto'` — **l'interfaccia è localizzata** | leggere l'etichetta |
 | Effort | popup con uno **Slider**, corsa variabile per modello | `RangeValue.SetValue` |
 | Sessioni (tendina) | `Button '<stato> <titolo>'` + compagno `Altre opzioni per <titolo>` | `Invoke` sulla riga |
-| Telemetria | `Button 'Usage: context 6%, plan 32%'` (resta in inglese) | parse |
+| Telemetria | `Button 'Usage: context 6%, plan 32%'` — **oppure** `context 127.5k` (token assoluti): il formato oscilla, visti entrambi (resta in inglese) | parse di entrambi i formati |
 
 **Vincolo chiave:** modello ed effort valgono sulla **conversazione attiva**. Per
 cambiare marcia a una sessione bisogna **prima selezionarla** nella sidebar (che la
@@ -135,13 +135,14 @@ piano — l'UX va costruita su questa verità, non nasconderla.
 |---|---|
 | Bersaglio corretto individuato (app Claude Desktop MSIX) | ✅ |
 | Enumerazione conversazioni (UIA sidebar) | ✅ Provata |
-| Lettura modello/effort/telemetria (UIA) | ✅ Provata |
+| Lettura modello/effort/telemetria (UIA) | ✅ Provata — il contatore Usage ha **due formati** (%, token) e il broker li legge entrambi (sessione 7) |
 | Switch modello (UIA Select) | ✅ Provato su tutti e 7 i modelli, con ripristino verificato |
 | Switch effort (UIA Slider) | ✅ Provato su tutte le posizioni, con ripristino verificato |
 | **Ladder effort completo** | ✅ **Mappato dal vivo** — vedi §3.1, salvato in `backend/gearbox.json` |
 | Attuazione **senza rubare il focus** | 🟡 Letture focus-free ✅; gli switch alzano comunque l'app ⚠️ |
 | **UIA Broker (M1)** | ✅ [`backend/`](backend/) — demone NDJSON, 10 comandi + diagnostici |
-| Comando unico `capabilities` per la GUI | ✅ Provato sull'app viva (9,9 s per risposta completa) |
+| Comando unico `capabilities` per la GUI | ✅ Provato sull'app viva (5,8–13 s per risposta completa, a seconda del risveglio dell'albero) |
+| **Collaudo M1 end-to-end (`test.js`)** | ✅ Riscritto e passato 7/7 sull'app viva (sessione 7): selectSession + setModel + setEffort con verifica e auto-ripristino |
 | Riaggancio automatico se l'app si chiude/riapre | ✅ Rilevamento provato su morte reale (`alivecheck.ps1`), riaggancio 3/3 (`reattach.js`) |
 | Scelta della finestra giusta fra le più di Claude | ✅ Si aggancia solo dove il pulsante del modello esiste |
 | Spec di build | ✅ [SPEC.md](SPEC.md) (⚠️ §2 e §4.1 superati dalla sessione 5: vedi §3 qui) |
@@ -167,6 +168,12 @@ su una perdita simulata sull'app vera (`reattach.js`); la giuntura fra i due non
 è osservabile perché richiederebbe di chiudere l'app che ospita chi collauda.
 È il massimo ottenibile su questa macchina — chi in futuro pilotasse il broker
 da fuori Claude può chiudere il cerchio con `detachtest.js`.
+
+Due rischi noti sono stati **rimandati apposta** in sessione 7 (prematuri
+finché la GUI non esiste): la verifica forte di `selectSession` (serve un
+segnale affidabile di "conversazione attiva" da progettare) e il match dei
+titoli per suffisso in `SessionEntries` (un titolo che è suffisso di un altro
+può agganciare la riga sbagliata). Da riprendere all'integrazione col frontend.
 
 ### Idee raccolte — frontend / GUI
 

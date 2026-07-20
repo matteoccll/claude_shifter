@@ -20,6 +20,77 @@ stanno in [PROJECT.md](PROJECT.md).
 
 ---
 
+## 2026-07-20 (sessione 7 — backend: collaudo dal vivo e sei riparazioni)
+
+- `SETUP` — Collaudato l'intero backend sull'app viva **prima** di toccare il
+  codice: `state`, `probe`, `capabilities`, `reattach` (3/3 recuperi, ~0,8 s
+  l'uno) e la catena M1 completa — enumerate → selectSession andata/ritorno →
+  setModel andata/ritorno → setEffort andata/ritorno — con verifica delle
+  etichette a ogni passo e ripristino finale confermato. Il cuore del broker
+  reggeva; i difetti erano tutti ai bordi.
+- `BUG` `FIX` — **Il cruscotto era cieco e non lo diceva.** Il contatore
+  dell'app oscilla fra due formati — `Usage: context 14%, plan 32%` e
+  `Usage: context 127.5k, plan 41%` (token assoluti) — visti entrambi nella
+  stessa serata. `readUsage` capiva solo la percentuale, e `capabilities`
+  restituiva il cruscotto vuoto **senza registrarlo in `errors`**: il
+  fallimento silenzioso che quella lista doveva impedire. Ora il parser legge
+  entrambi i formati (e la virgola decimale), riporta il testo grezzo, e un
+  cruscotto assente o illeggibile compare in `errors`.
+- `BUG` `FIX` — **test.js era morto e con lui il collaudo di selectSession.**
+  Parlava il protocollo di due generazioni fa (`{sessions}` invece di
+  `{count,text}`) e crollava al passo 1 con un TypeError muto; era l'unico
+  script a esercitare `selectSession`. Riscritto sul client condiviso con
+  verifica per passo e auto-ripristino; passato 7 verifiche su 7 in 25 s.
+- `SCOPERTA` `FIX` — **I cercatori di menu pescavano la chat.** I punti elenco
+  markdown della conversazione si renderizzano come `ListItem` e precedono il
+  menu nell'ordine del documento: il broker ha restituito come "interruttore
+  fast mode" il testo di un messaggio della chat. Le voci di menu vere sono
+  solo `Menu`/`MenuItem`/`RadioButton` (verificato col dump): i cercatori ora
+  accettano solo `MenuItem`. Emersa collaudando il fix precedente, non
+  leggendo il codice.
+- `BUG` `FIX` — **fastMode agiva alla cieca.** Lo stato del toggle non è mai
+  stato leggibile (illeggibile in ogni run) e il ramo `set` attuava comunque
+  assumendo "spento", dichiarando poi `changed=true` senza verifica. Ora
+  rifiuta esplicitamente se la voce manca (modelli senza fast mode) o se lo
+  stato non si legge; la lettura resta permessa. Provate entrambe le guardie
+  dal vivo, con ripristino del modello.
+- `FIX` — **ModelBtn non si fida più del solo nome.** La sidebar precede la
+  leva nell'ordine del documento: una conversazione con titolo auto-generato
+  che inizia per Sonnet/Opus/Haiku/Fable sarebbe stata scambiata per il
+  pulsante modello. In sidebar c'era "Prompt efficace per Fable 5" — salva
+  solo perché il titolo non *inizia* col nome. Ora il candidato deve esporre
+  anche `ExpandCollapsePattern`: la leva apre un menu, una riga di sessione no
+  (verificato dal vivo: riga → False, leva → True).
+- `FIX` — **setEffort ora verifica, e probeEffort verifica la cosa giusta.**
+  `setEffort` rispondeva ok con qualunque etichetta fosse rimasta sul
+  pulsante; ora rilegge la posizione del cursore e fallisce se non coincide
+  (riaprendo il popup una volta se si è chiuso da solo). `restoredOk` di
+  `probeEffort` controllava solo di aver letto *una* etichetta al ripristino,
+  non che fosse *quella* della posizione di partenza — terza "verifica che non
+  verificava" del progetto; ora confronta con l'etichetta letta dalla spazzata
+  stessa ed espone `expected`.
+- `FIX` — **Minuzie del client.** `start()` rigetta se PowerShell non parte o
+  se il broker muore prima dell'aggancio (prima restava appeso); `withDeadline`
+  accetta report nullo e scrive su stderr, così anche i diagnostici a console
+  (`probe`, `dump`, `tree`, `popup`) hanno una scadenza; `state.js` le passava
+  la label al posto del report (TypeError muto al timeout); rimosso un
+  watchdog mai assegnato; corretti due commenti che dicevano ancora "closed
+  with Escape".
+- `DECISIONE` — **Lasciati fuori apposta, perché prematuri:** la verifica
+  forte di `selectSession` (serve prima progettare un segnale affidabile di
+  "conversazione attiva") e il match dei titoli per suffisso in
+  `SessionEntries` (un titolo che è suffisso di un altro può agganciare la
+  riga sbagliata). Registrati come rischi noti, da riprendere quando la GUI
+  esisterà.
+- `SCOPERTA` — **detachtest.js risulta lanciato ma abbandonato.** Esiste un
+  report delle 23:06 (16 giri, tutti ok, troncato senza esito): l'app non è
+  mai stata chiusa durante la run. Il ramo "app davvero chiusa" resta non
+  provato, come già dichiarato in PROJECT §10.
+- `SCOPERTA` — **Limite noto:** se una chiamata UIA si pianta davvero, la
+  deadline uccide lo script Node ma il figlio PowerShell resta orfano,
+  bloccato con il client UIA attaccato. Non provocabile senza rischiare l'app
+  che ospita il collaudo.
+
 ## 2026-07-20 (sessione 6 — backend: i due pezzi mancanti del broker)
 
 - `SETUP` — Aggiunto il comando **`capabilities`**: una sola risposta con marcia
