@@ -1,0 +1,3 @@
+# Gli script di hook devono restare LF anche su Windows: con CRLF bash
+# fallisce con "bad interpreter: /usr/bin/env bash^M".
+*.sh text eol=lf
