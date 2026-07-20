@@ -136,15 +136,17 @@ piano — l'UX va costruita su questa verità, non nasconderla.
 | Bersaglio corretto individuato (app Claude Desktop MSIX) | ✅ |
 | Enumerazione conversazioni (UIA sidebar) | ✅ Provata |
 | Lettura modello/effort/telemetria (UIA) | ✅ Provata — il contatore Usage ha **due formati** (%, token) e il broker li legge entrambi (sessione 7) |
-| Switch modello (UIA Select) | ✅ Provato su tutti e 7 i modelli, con ripristino verificato |
+| Switch modello (UIA Select) | ✅ Provato su tutti e 7 i modelli, con ripristino verificato — ⚠️ il sottomenu "Altri modelli" ogni tanto non si apre (vedi §10) |
 | Switch effort (UIA Slider) | ✅ Provato su tutte le posizioni, con ripristino verificato |
-| **Ladder effort completo** | ✅ **Mappato dal vivo** — vedi §3.1, salvato in `backend/gearbox.json` |
+| **Ladder effort completo** | ✅ **Mappato dal vivo** — vedi §3.1, salvato in `backend/gearbox.json`. Rimisurato in sessione 8: identico, timestamp a parte. `map.js` non sovrascrive il file se la mappa è monca, e in quel caso esce 3 |
 | Attuazione **senza rubare il focus** | 🟡 Letture focus-free ✅; gli switch alzano comunque l'app ⚠️ |
 | **UIA Broker (M1)** | ✅ [`backend/`](backend/) — demone NDJSON, 10 comandi + diagnostici |
 | Comando unico `capabilities` per la GUI | ✅ Provato sull'app viva (5,8–13 s per risposta completa, a seconda del risveglio dell'albero) |
 | **Collaudo M1 end-to-end (`test.js`)** | ✅ Riscritto e passato 7/7 sull'app viva (sessione 7): selectSession + setModel + setEffort con verifica e auto-ripristino |
 | Riaggancio automatico se l'app si chiude/riapre | ✅ Rilevamento provato su morte reale (`alivecheck.ps1`), riaggancio 3/3 (`reattach.js`) |
 | Scelta della finestra giusta fra le più di Claude | ✅ Si aggancia solo dove il pulsante del modello esiste |
+| **Comandi malformati non fanno danni** | ✅ Provato (sessione 10) — un argomento mancante viene **rifiutato**, non interpretato: prima `setModel` senza nome innestava Fable 5 e `setEffort` senza livello scendeva al minimo, entrambi rispondendo `ok` |
+| L'attuazione non ruba il puntatore | ✅ Il mouse serve per il sottomenu, ma viene rimesso dov'era (misurato: scarto 0 px) |
 | Spec di build | ✅ [SPEC.md](SPEC.md) (⚠️ §2 e §4.1 superati dalla sessione 5: vedi §3 qui) |
 | Prototipo UIA | ✅ [`prototype/`](prototype/) (`uia_shifter.ps1`, `uia_effort_slider.ps1`) |
 | GUI (frontend) | ⬜ In carico all'altro collaboratore |
@@ -159,7 +161,18 @@ secondo sono idee raccolte che nessuno ha ancora progettato.
 ### Prossima azione — backend
 
 I due pezzi mancanti (comando `capabilities`, riaggancio automatico) sono
-**scritti, provati e chiusi**. Il backend non ha lavoro concordato in coda.
+**scritti, provati e chiusi**. Anche i due difetti di `map.js` rinviati in
+sessione 8 sono stati chiusi in sessione 9: `probeEffort` è protetto come
+`setModel` (un suo errore costa un modello, non l'intera run) e lo script esce
+**3** quando dichiara la mappa incompleta, invece di 0. La coda di lavoro
+concordato sul backend è vuota.
+
+Il controllo generale della sessione 10 ha chiuso quattro difetti che i collaudi
+non vedevano perché nessuno di essi mandava comandi malformati: `setModel` senza
+nome innestava Fable 5 e `setEffort` senza livello scendeva al minimo, **entrambi
+rispondendo `ok`**. Conseguenza per il frontend: il broker ora **rifiuta**
+l'argomento mancante invece di indovinarlo, quindi una chiamata a cui la GUI ha
+dimenticato un campo torna come errore e non come marcia cambiata a tradimento.
 
 Una cosa sola resta scoperta, e va detta invece che nascosta: **le due metà del
 riaggancio sono provate separatamente, non insieme.** Il rilevamento della morte
@@ -174,6 +187,17 @@ finché la GUI non esiste): la verifica forte di `selectSession` (serve un
 segnale affidabile di "conversazione attiva" da progettare) e il match dei
 titoli per suffisso in `SessionEntries` (un titolo che è suffisso di un altro
 può agganciare la riga sbagliata). Da riprendere all'integrazione col frontend.
+
+**Un bug aperto senza causa nota (sessione 8): il sottomenu "Altri modelli" ogni
+tanto non si apre.** Quando succede, i tre modelli che ci stanno dietro (Opus
+4.7, Opus 4.6, Sonnet 4.6) diventano irraggiungibili e `setModel` fallisce con
+"Model option not found". Nel log si riconosce da `4 -> 0`: dopo l'`Expand()` il
+menu intero sparisce invece di espandersi, e hover e click trovano un elemento
+senza punto cliccabile. Non è riproducibile a comando — visto fallire una volta
+in una sequenza lunga, e funzionare 4 volte su 4 in prove isolate, compreso un
+repro mirato che scagionava Haiku. Conseguenza per il frontend: **un `setModel`
+che fallisce non significa che il modello non esista**, e la GUI deve poter
+riprovare invece di dedurre che l'app non lo offre più.
 
 ### Idee raccolte — frontend / GUI
 

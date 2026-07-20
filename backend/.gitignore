@@ -5,5 +5,9 @@
 out-*.txt
 tree.txt
 
+# Il residuo di una mappatura incompleta: serve a capire cosa e' mancato in quel
+# giro, non e' una mappa. Transitorio.
+gearbox-partial.json
+
 # gearbox.json NON e' ignorato di proposito: e' il risultato della mappatura,
 # non uno scarto.

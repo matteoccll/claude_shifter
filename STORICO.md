@@ -20,6 +20,124 @@ stanno in [PROJECT.md](PROJECT.md).
 
 ---
 
+## 2026-07-21 (sessione 10 — backend: controllo generale e quattro difetti chiusi)
+
+- `SETUP` — Controllo generale del backend sull'app viva: parse di `broker.ps1`,
+  sintassi dei 13 file JS, poi `capabilities` (5,8 s, 7 modelli col sottomenu
+  aperto all'hover), `reattach` 2/2, `test.js` M1 passato con ripristino
+  verificato, e una batteria nuova sui rami d'errore (comando ignoto, modello
+  inesistente, effort fuori scala, sessione inesistente): tutti errori puliti,
+  **nessuno ha cambiato lo stato dell'app**.
+- `BUG` `FIX` — **`setModel` senza il nome innestava Fable 5.** Con l'argomento
+  mancante il match "a somiglianza" di `FindModelOption` diventava `-like "*"`,
+  che accetta tutto e restituisce la prima voce del menu. E la verifica **passava**:
+  il broker rileggeva il pulsante, ci trovava davvero "Fable 5" e rispondeva `ok`.
+  Un campo `undefined` lato GUI sparisce dal JSON senza far rumore, quindi il caso
+  era a una riga di distanza, non ipotetico. Chiuso con tre sbarramenti: il jolly
+  non degenera più (nome vuoto → nessun match), `Op-SetModel` rifiuta prima di
+  aprire il menu, il dispatch controlla che il campo sia arrivato.
+- `BUG` `FIX` — **`setEffort` senza il livello scendeva al minimo in silenzio.**
+  `[int]$null` vale `0`, che è dentro la scala, quindi il controllo "fuori range"
+  non scattava. Aggiunto `ReqArg`, che distingue **"il campo non c'è"** da **"il
+  campo c'è e vale zero"** — differenza che prima non esisteva. Il livello deve
+  anche essere un intero: `"alto"` e `2.7` vengono respinti. Verificato apposta
+  che `level: 0` continui a passare: zero è la marcia più bassa, non un valore
+  mancante.
+- `FIX` — **Il puntatore non veniva più restituito.** Aprire il sottomenu "Altri
+  modelli" richiede un hover vero, quindi ogni `capabilities` trascinava il mouse
+  attraverso lo schermo e ce lo lasciava — e la GUI deve chiamare `capabilities`
+  dopo ogni cambio marcia. Ora la posizione viene salvata al primo movimento e
+  rimessa alla fine del comando (in un `finally`, così vale anche per i comandi
+  falliti a metà menu), mai fra un movimento e l'altro: il sottomenu resta aperto
+  solo finché il puntatore ci sta sopra. Se nel frattempo è stato l'utente a
+  muovere il mouse, il broker lo lascia stare.
+- `SCOPERTA` — **`$home` in PowerShell è riservata, e il confronto fra nomi di
+  variabile è insensibile alle maiuscole.** Scritta durante il fix qui sopra, ha
+  prodotto un errore non terminante a ogni comando; il nome restava a contenere
+  il percorso del profilo, la guardia `$null -eq` lo trovava valorizzato e
+  proseguiva, e `[int]$origin.X` su una stringa dava `0` — **puntatore spedito a
+  0,0 a ogni comando**, peggio del problema di partenza. Rinominata `$origin`.
+  È la stessa famiglia di `$PID`, già evitata nel file chiamando `$script:pid0`
+  quel campo; ora il motivo è scritto accanto alla funzione. Passato tutto il
+  file al setaccio: nessun'altra collisione (i `$null = ...` sono lo scarto
+  idiomatico).
+- `SETUP` — Il ripristino del puntatore è stato **misurato**, non dedotto: mouse
+  a 640,400, `capabilities.js`, rilettura → 640,400, scarto 0 px. Il difetto di
+  `$home` era invisibile agli esiti verdi dei collaudi (i test guardavano la
+  marcia, non il mouse) ed è emerso solo dal rumore su stderr nel report.
+- `BUG` `FIX` — **`map.js` si fidava della lista modelli.** Leggeva `listModels`
+  senza la normalizzazione che `capabilities()` ha già: se l'app offrisse un solo
+  modello, PowerShell 5.1 lo consegna come oggetto singolo e `models.forEach`
+  esplode. Aggiunto `listModels()` al client, che restituisce sempre un array.
+  Ipotetico con 7 modelli, ma è la stessa trappola già documentata nel client.
+
+## 2026-07-21 (sessione 9 — backend: chiusi i due difetti di `map.js`)
+
+- `BUG` `FIX` — **Un modello storto buttava all'aria l'intera mappatura.** In
+  `map.js` il `setModel` di ogni giro era protetto da un `try`, il `probeEffort`
+  subito dopo no: un suo errore risaliva fino al `finally`, chiudendo la run e
+  perdendo anche i modelli già misurati bene. Ora i due passaggi si comportano
+  allo stesso modo — errore scritto nel report, modello contato fra i non
+  misurati, giro che continua. Un guasto costa un modello, non la serata.
+- `BUG` `FIX` — **Lo script usciva 0 anche a mappa dichiarata incompleta.** Il
+  ramo protettivo aggiunto in sessione 8 rifiutava di sovrascrivere
+  `gearbox.json` ma restituiva comunque successo: un esito verde che non
+  significava niente per chi non apriva il report. Ora la mappa monca esce **3**.
+  Codici documentati in cima al file: 0 completa, 1 errore fatale, 2 deadline,
+  3 incompleta. Usato `process.exitCode` e non `process.exit()`, così il report
+  viene scritto e il broker chiuso come prima. Chiude il rinvio deciso in
+  sessione 8.
+
+## 2026-07-21 (sessione 8 — backend: collaudo completo e la mappa che si cancellava)
+
+- `SETUP` — Collaudato l'intero backend sull'app viva, partendo dai comandi che
+  non toccano nulla: `state`, `probe`, `capabilities`, `fastmode`, `popup`,
+  `effortpopup`, `dump`, `tree` tutti passati; `reattach` 3/3 recuperi in ~850 ms
+  l'uno; `test.js` 6 verifiche su 6 con ripristino confermato. Il giro di
+  `selectSession` è stato saltato: in sidebar c'era una sola conversazione.
+- `BUG` — **`map.js` ha cancellato la mappa buona.** Una run in cui i tre modelli
+  dietro il sottomenu "Altri modelli" non si sono lasciati raggiungere ha
+  comunque riscritto `gearbox.json`, sostituendo le scale di effort di quattro
+  modelli con altrettanti messaggi d'errore (97 righe perse, 6 aggiunte). La
+  scrittura era incondizionata: nessuna distinzione fra mappa completa e mappa
+  monca. Dato recuperato da git, che lo teneva a HEAD.
+- `DECISIONE` `FIX` — **`gearbox.json` si scrive solo a mappa completa.** Se anche
+  un solo modello abilitato non è stato misurato, il file buono resta intatto e
+  il risultato zoppo va in `gearbox-partial.json` (aggiunto al `.gitignore`: è
+  uno scarto diagnostico, non una mappa). Motivo: la mappa non è un log, è
+  l'unica misura completa che esista, e una serata sfortunata al menu non deve
+  poterla cancellare. Scartata l'alternativa di fondere il vecchio col nuovo per
+  i modelli falliti: spaccerebbe misure di ieri per misure di stasera, contro
+  "il backend rileva, non dichiara" (PROJECT §4.1).
+- `SCOPERTA` `FIX` — **Due risposte vuote che si assomigliano.** "Questo modello
+  non ha l'effort" (Haiku: misura riuscita) e "l'effort non si è aperto"
+  (fallimento di lettura) erano distinguibili solo dal testo inglese del campo
+  `reason`. Farci dipendere `map.js` sarebbe stata la trappola che in sessione 7
+  aveva ucciso `test.js`. Aggiunto al broker il campo `hasControl`, leggibile a
+  macchina, nei tre punti che producono quella risposta (`Op-EffortRange`,
+  `Op-ProbeEffort`, `Op-Capabilities`).
+- `BUG` — **Il sottomenu "Altri modelli" a volte non si apre, e non si sa
+  perché.** Nel log della run fallita: `4 -> 0`, cioè dopo l'`Expand()` il menu
+  intero è sparito invece di espandersi, e i tentativi successivi (hover, click)
+  trovavano un elemento senza punto cliccabile. Non riproducibile a comando: 3
+  giri isolati di `probe` e un repro mirato subito dopo Haiku l'hanno visto
+  funzionare 4 volte su 4, e la rimappatura successiva ha fatto 7/7. Causa non
+  trovata. Resta aperto — ma ora non fa più danni permanenti.
+- `SCOPERTA` — **Il degrado era un incidente, non un cambiamento dell'app.** La
+  rimappatura completa ha prodotto un `gearbox.json` identico a quello
+  precedente tranne il timestamp: le scale di effort dei 7 modelli non si sono
+  mosse.
+- `SETUP` — Il ramo protettivo non era osservabile aspettando che il sottomenu si
+  impuntasse di nuovo, quindi è stato forzato con un modello inesistente su una
+  copia dello script: Haiku misurato e **non** contato come buco, il modello
+  fasullo contato, scritto solo il parziale, e l'impronta SHA256 di
+  `gearbox.json` identica prima e dopo.
+- `DECISIONE` — **Rinviati apposta gli altri due difetti di `map.js`**, su
+  richiesta: `probeEffort` non è protetto mentre `setModel` sì (un suo errore
+  butta all'aria l'intera run, comprese le misure già fatte), e lo script esce
+  sempre 0 — anche a mappa dichiarata incompleta. Due politiche opposte per lo
+  stesso tipo di guasto, e un esito verde che non significa niente.
+
 ## 2026-07-20 (sessione 7 — backend: collaudo dal vivo e sei riparazioni)
 
 - `SETUP` — Collaudato l'intero backend sull'app viva **prima** di toccare il

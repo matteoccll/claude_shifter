@@ -109,6 +109,16 @@ class Broker {
     };
   }
 
+  // Same trap capabilities() guards against, and the reason this is a method
+  // rather than a raw send: PowerShell 5.1 serialises a one-element array as a
+  // bare object, so an app offering a single model would answer with an object
+  // and every caller doing .length or .forEach on it would break. Callers get a
+  // list, always.
+  async listModels() {
+    const r = await this.send('listModels');
+    return [].concat(r.models ?? []);
+  }
+
   stop() {
     this.ps?.stdin.end();
     // The child normally exits on stdin close; make sure a stuck one can never

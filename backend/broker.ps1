@@ -97,6 +97,23 @@ function Reply-Err {
     Send @{ id = $id; ok = $false; error = [string]$msg }
 }
 
+# Read a required argument, telling "absent" apart from "present and empty".
+#
+# PowerShell answers for a property that is not there with $null, and then
+# quietly coerces it: [string]$null is '' and [int]$null is 0. Both are valid
+# looking values, so a command that arrived without its argument used to act on
+# the coerced one -- setModel engaged the first model in the menu, setEffort
+# dropped to the bottom of the ladder, and both reported success. A field that
+# JavaScript left undefined never even reaches the JSON, so this is one dropped
+# line in the GUI away, not a hypothetical.
+function ReqArg {
+    param($req, [string]$name)
+    if (-not $req.PSObject.Properties[$name]) { throw "$($req.cmd): missing '$name'" }
+    $v = $req.$name
+    if ($null -eq $v) { throw "$($req.cmd): '$name' is null" }
+    return $v
+}
+
 # -- UIA state ----------------------------------------------------------------
 $script:root   = $null
 $script:hwnd   = [IntPtr]::Zero
@@ -442,20 +459,72 @@ function PointOf {
     throw "element has no clickable point"
 }
 
+# The pointer belongs to the user, not to us. Opening the "other models" submenu
+# needs a real hover, so a plain capabilities call drags the cursor across the
+# screen -- and the GUI is meant to call capabilities after every gear change.
+# Left uncorrected that is a mouse yanked away several times a minute.
+#
+# The position is saved on the first move of a command and put back when the
+# command ends (the finally in the dispatch loop), never between one move and the
+# next: the submenu stays open only while the pointer rests on it, so restoring
+# in between would close the very menu we are reading.
+$script:savedCursor  = $null   # where the pointer was before we touched it
+$script:lastSetPoint = $null   # where we last put it, to tell our move from the user's
+
+function SaveCursor {
+    if ($null -ne $script:savedCursor) { return }
+    $pt = New-Object 'W+POINT'
+    if ([W]::GetCursorPos([ref]$pt)) { $script:savedCursor = $pt }
+}
+
+function MoveCursor {
+    param([int]$x, [int]$y)
+    SaveCursor
+    [W]::SetCursorPos($x, $y) | Out-Null
+    $script:lastSetPoint = @{ X = $x; Y = $y }
+}
+
+# NOTE: the variable below is deliberately not called $home. PowerShell reserves
+# $HOME (and matches variable names case-insensitively), so `$home = ...` fails
+# as a non-terminating write error, leaves the name holding the profile path, and
+# every read after it goes on with a string where a point should be -- which sent
+# the pointer to 0,0 on every single command. Same family as $pid, avoided
+# elsewhere in this file by calling the field $script:pid0.
+function RestoreCursor {
+    $origin = $script:savedCursor
+    $last   = $script:lastSetPoint
+    $script:savedCursor  = $null
+    $script:lastSetPoint = $null
+    if ($null -eq $origin) { return }
+
+    # Put it back only if the pointer is still where we left it. If the user
+    # grabbed the mouse while we were driving menus, theirs wins: yanking a
+    # pointer somebody is actively using is worse than leaving ours behind.
+    $now = New-Object 'W+POINT'
+    if (-not [W]::GetCursorPos([ref]$now)) { return }
+    if ($null -ne $last -and
+        ([Math]::Abs($now.X - $last.X) -gt 4 -or [Math]::Abs($now.Y - $last.Y) -gt 4)) {
+        Log "cursor left where it is: the user moved it"
+        return
+    }
+    [W]::SetCursorPos([int]$origin.X, [int]$origin.Y) | Out-Null
+    Log "cursor restored to $($origin.X),$($origin.Y)"
+}
+
 function HoverElement {
     param($e)
     $p = PointOf $e
-    [W]::SetCursorPos([int]$p.X, [int]$p.Y) | Out-Null
+    MoveCursor ([int]$p.X) ([int]$p.Y)
     Start-Sleep -Milliseconds 250
     # nudge, because some UI only reacts to actual movement
-    [W]::SetCursorPos([int]$p.X + 2, [int]$p.Y) | Out-Null
+    MoveCursor ([int]$p.X + 2) ([int]$p.Y)
     Start-Sleep -Milliseconds 250
 }
 
 function ClickElement {
     param($e)
     $p = PointOf $e
-    [W]::SetCursorPos([int]$p.X, [int]$p.Y) | Out-Null
+    MoveCursor ([int]$p.X) ([int]$p.Y)
     Start-Sleep -Milliseconds 200
     [W]::mouse_event($MOUSE_LEFTDOWN, 0, 0, 0, [UIntPtr]::Zero)
     Start-Sleep -Milliseconds 60
@@ -650,6 +719,11 @@ function Op-SelectSession {
 function FindModelOption {
     param([string]$alias)
     $want = BareModel $alias
+    # An empty target turns the prefix match below into "*", which matches every
+    # entry and hands back the first one in the menu. That is how a setModel with
+    # a missing name silently engaged Fable 5 -- and the verification afterwards
+    # passed, because the button really did read Fable 5. No name, no match.
+    if ([string]::IsNullOrWhiteSpace($want)) { return $null }
     $opts = @(ModelOptionRows)
     $exact = $opts | Where-Object { (BareModel $_.Nm) -eq $want } | Select-Object -First 1
     if ($exact) { return $exact.El }
@@ -838,12 +912,19 @@ function Op-ModelPopupTree {
 
 # Read the effort range without touching it. Cheap and non-destructive: this is
 # what the GUI needs to know how many detents to draw.
+#
+# `hasControl` separates the two reasons an effort answer comes back empty, so a
+# caller never has to match on the prose of `reason`. A model without the control
+# (Haiku) is a finding: the ladder really has no rungs, and the lever must be
+# drawn without its splitter. A model whose control is present but would not open
+# is a failure to read. A caller that cannot tell them apart either treats Haiku
+# as permanently broken or records "no effort" for a model that has one.
 function Op-EffortRange {
     $sl = OpenEffortPopup
     if (-not $sl) {
         ClosePopups
-        if (-not (EffortBtn)) { return @{ available = $false; reason = 'model has no effort control' } }
-        return @{ available = $false; reason = 'effort popup did not open' }
+        if (-not (EffortBtn)) { return @{ available = $false; hasControl = $false; reason = 'model has no effort control' } }
+        return @{ available = $false; hasControl = $true; reason = 'effort popup did not open' }
     }
     try {
         $rv = $sl.GetCurrentPattern([System.Windows.Automation.RangeValuePattern]::Pattern)
@@ -870,8 +951,9 @@ function Op-ProbeEffort {
     $sl = OpenEffortPopup
     if (-not $sl) {
         ClosePopups
-        if (-not (EffortBtn)) { return @{ available = $false; reason = 'model has no effort control' } }
-        return @{ available = $false; reason = 'effort popup did not open' }
+        # See Op-EffortRange for why `hasControl` travels alongside `reason`.
+        if (-not (EffortBtn)) { return @{ available = $false; hasControl = $false; reason = 'model has no effort control' } }
+        return @{ available = $false; hasControl = $true; reason = 'effort popup did not open' }
     }
 
     $rv       = $sl.GetCurrentPattern([System.Windows.Automation.RangeValuePattern]::Pattern)
@@ -960,12 +1042,14 @@ function Op-Capabilities {
     try { $models = @(Op-ListModels) } catch { $errors.Add("listModels: $($_.Exception.Message)") }
 
     if ($gear.hasEffort) {
-        $effort = @{ available = $false; reason = 'effortRange failed' }
+        # The button is there, so the control exists whether or not the read works:
+        # hasControl stays true and this stays a failure, never a "no effort" claim.
+        $effort = @{ available = $false; hasControl = $true; reason = 'effortRange failed' }
         try { $effort = Op-EffortRange } catch { $errors.Add("effortRange: $($_.Exception.Message)") }
     } else {
         # Haiku. Not an error: an absent ladder is a real state the GUI must
         # render (the lever loses its splitter).
-        $effort = @{ available = $false; reason = 'model has no effort control' }
+        $effort = @{ available = $false; hasControl = $false; reason = 'model has no effort control' }
     }
 
     $usage = $null
@@ -998,6 +1082,10 @@ function Op-Capabilities {
 
 function Op-SetModel {
     param([string]$alias)
+    # Refuse before opening anything. A caller that lost the name is a caller
+    # that does not know which gear it wants, and guessing one is the worst
+    # possible answer -- see FindModelOption.
+    if ([string]::IsNullOrWhiteSpace($alias)) { throw "setModel: no model name given" }
     if (-not (OpenModelPopup)) { ClosePopups; throw "Model menu did not open" }
 
     $target = FindModelOption $alias
@@ -1155,14 +1243,22 @@ while ($true) {
                 else { Reply-Ok $id $u }
             }
             'selectSession' {
-                Op-SelectSession $req.name
+                Op-SelectSession ([string](ReqArg $req 'name'))
                 Reply-Ok $id $null
             }
             'setModel' {
-                Reply-Ok $id @{ model = (Op-SetModel $req.model) }
+                Reply-Ok $id @{ model = (Op-SetModel ([string](ReqArg $req 'model'))) }
             }
             'setEffort' {
-                Reply-Ok $id (Op-SetEffort ([int]$req.level))
+                # Not just "is it there": a level that is not a whole number is
+                # as unusable as a missing one, and [int] on junk either throws
+                # somewhere less obvious or rounds to a gear nobody asked for.
+                $raw = ReqArg $req 'level'
+                $lvl = 0
+                if (-not [int]::TryParse([string]$raw, [ref]$lvl)) {
+                    throw "setEffort: 'level' is not a whole number: '$raw'"
+                }
+                Reply-Ok $id (Op-SetEffort $lvl)
             }
             'listModels' {
                 Reply-Ok $id @{ models = (Op-ListModels) }
@@ -1202,5 +1298,10 @@ while ($true) {
         $msg = $_.Exception.Message
         Log "Error in $cmd : $msg"
         Reply-Err $id $msg
+    } finally {
+        # Every exit from a command, including the failed ones: an operation that
+        # threw halfway through a menu is exactly when the pointer is left
+        # stranded somewhere the user did not put it.
+        RestoreCursor
     }
 }
