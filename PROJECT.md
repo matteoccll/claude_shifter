@@ -4,145 +4,111 @@
 > l'aggiornamento di questo file e di [STORICO.md](STORICO.md). Non aggiornare
 > senza conferma, ma **non chiudere la sessione senza aver chiesto.**
 
+> 📐 Specifica di build pronta allo sviluppo: **[SPEC.md](SPEC.md)** (autorevole
+> sul "cosa/come"). Questo file dice *dove si va e perché*.
+
 ---
 
 ## 1. Cos'è
 
-Un **cambio di marce fisico-simulato** per Claude Code: l'utente innesta una
-marcia e in realtà sta cambiando il modello che serve la sessione.
-
-Non è una skin. La tesi del progetto è che la metafora meccanica non sia
-decorativa ma **descrittiva**: la scelta modello+effort ha davvero la struttura
-di un cambio (rapporti discreti, combinazioni non ingranabili, costo del
-cambio a caldo), e trattarla come tale produce un'interfaccia migliore di un
-menu a tendina.
+Un **cambio di marce fisico-simulato** per Claude, realizzato come **software
+desktop autonomo** (pattern claudeine: un'app nativa che parla con Claude ma è
+indipendente dalla sua interfaccia). L'utente innesta una marcia sulla leva e in
+realtà cambia il modello/effort di una conversazione **dentro l'app Claude
+Desktop** (quella bianca che si apre cliccando il logo), scelta da un menu a
+tendina. **L'utente agisce solo sulla nostra leva: non apre mai il menu modello
+dell'app a mano.**
 
 ## 2. Obiettivo
 
-Una **GUI esterna** che pilota una sessione Claude Code viva, con:
+Una **GUI desktop autonoma** che pilota l'app **Claude Desktop** viva, con:
 
-- una **leva principale** → il modello
-- una **leva secondaria (splitter)** → l'effort
-- un **cruscotto** che legge la telemetria reale della sessione
+- **una sola leva-cambio** + un **menu a tendina** per scegliere la conversazione
+  su cui agire (una leva, molte conversazioni);
+- **leva principale** → il modello, **splitter** → l'effort;
+- un **cruscotto** che legge la telemetria reale (context %, plan %).
 
-Il criterio di successo non è estetico: si deve poter cambiare marcia
-**guardando la strada**, cioè senza uscire dal flusso di lavoro per aprire un
-menu, e **sapendo su quale sessione si sta agendo** prima di agire.
+Criterio di successo: cambiare marcia **guardando la strada** e **sapendo su quale
+conversazione si agisce** prima di agire.
 
-## 3. La meccanica reale (verificata, non ipotizzata)
+## 3. La meccanica reale (verificata dal vivo il 2026-07-20)
 
-Le due leve **esistono già** in Claude Code come comandi separati. Il design a
-"main box + splitter" dedotto in [model selection.md](model%20selection.md) era
-corretto:
+Il bersaglio è l'**app Claude Desktop** (MSIX, Electron). Si pilota via **Windows
+UI Automation (UIA)**, non da terminale. Verificato sul campo:
 
-| Leva | Comando | Posizioni |
+| Elemento | Come appare in UIA | Azione |
 |---|---|---|
-| Marcia (modello) | `/model <alias>` | `haiku`, `sonnet`, `opus`, `fable`, `default`, `opusplan`, `best`, o model ID completo |
-| Splitter (effort) | `/effort <livello>` | `low`, `medium`, `high`, `xhigh`, `max`, + `ultracode` |
+| Modello corrente | `Button 'Sonnet 5'` | leggere l'etichetta |
+| Menu modello | `RadioButton` `Haiku 4.5` / `Sonnet 5 · Default` / `Opus 4.8` / `Fable 5` | espandi + `Select` |
+| Effort corrente | `Button 'Effort: High'` | leggere l'etichetta |
+| Effort | popup con uno **Slider** 0–5 (`Faster ↔ Smarter`) | `RangeValue.SetValue` |
+| Sessioni (tendina) | `Button` `#N · <titolo>` nella sidebar | `Invoke` per attivarla |
+| Telemetria | `Button 'Usage: context 6%, plan 32%'` | parse |
 
-**Non tutte le combinazioni sono ingranabili.** Questa è la scoperta che
-sostituisce l'ipotesi della griglia 4×5:
+**Vincolo chiave:** modello ed effort valgono sulla **conversazione attiva**. Per
+cambiare marcia a una sessione bisogna **prima selezionarla** nella sidebar (che la
+porta in primo piano nell'app), poi agire sulle leve.
 
-- L'effort è **globale**, non memorizzato per-marcia.
-- Ma viene **resettato automaticamente per famiglia di modello**: alla prima
-  esecuzione di Fable 5 e Opus 4.8 l'effort torna a `high`, su Opus 4.7 a
-  `xhigh`, **ignorando la scelta precedente dell'utente**.
-- Se si imposta un livello che il modello non regge, **scala** al più alto
-  supportato (es. `xhigh` → `high` su Opus 4.6).
+## 4. Architettura decisa — e la correzione di rotta
 
-Tradotto in meccanica: è uno splitter i cui rapporti **cambiano di significato
-a seconda della marcia**, e che in certe marce viene **forzato in posizione**.
-La GUI deve mostrare questo, non nasconderlo — è la parte interessante.
+**Software desktop autonomo + attuazione via UI Automation sull'app Claude
+Desktop.** Provato sul campo il 2026-07-20.
 
-## 4. Architettura decisa
+- **Enumerazione** (tendina): i `Button` `#N · …` della sidebar dell'app.
+- **Lettura** marcia/effort/telemetria: etichette dei `Button` UIA.
+- **Attuazione**: modello = espandi il button → `Select` sul `RadioButton`; effort =
+  espandi → `RangeValue.SetValue` sullo Slider. Verifica sempre rileggendo
+  l'etichetta.
 
-**GUI esterna + injection da tastiera nel terminale.**
+### Perché non le altre / cosa è stato ribaltato
 
-Scelta consapevole, presa il 2026-07-20, contro due alternative più comode.
-Motivo: è l'unica che produce una **marcia che resta inserita**.
-
-### Perché non le altre
-
-| Alternativa | Perché scartata |
+| Alternativa | Esito |
 |---|---|
-| Skill con frontmatter `model:`/`effort:` | Funziona, ma l'override **dura un solo turno**. Non è una marcia inserita: è un **kickdown**. Utile forse come feature secondaria, non come leva. |
-| Hook | **Impossibile.** Nessun hook può cambiare modello o effort. `SessionStart` riceve il modello in input ma non esiste un campo di output per modificarlo. |
-| `model` in settings.json | Letto **solo all'avvio** della sessione. Inerte a caldo. |
-| Harness proprio su Agent SDK | Controllo totale, ma significa riscrivere Claude Code invece di guidarlo. Fuori scala. |
+| **Attuatore da terminale (console injection)** | **RIBALTATO.** Provato e funzionante, ma sul bersaglio SBAGLIATO (Claude Code CLI nel terminale). Il bersaglio è l'app Claude Desktop. Materiale archiviato. |
+| API/canale di controllo supportato | Non documentato per cambiare modello/effort a caldo. Si pilota la GUI. |
+| Estensione web / iniezione nel renderer dell'app | Scartato: fragile / bersaglio sbagliato. |
+| Una leva per ogni sessione | Scartato: caos. Una leva + tendina. |
 
-### Il vincolo che ne consegue
+## 5. Il cruscotto
 
-`/model` e `/effort` **digitati nel TTY** sono l'unico shift persistente. Quindi
-la GUI deve simulare digitazione. Questo è ciò che fanno anche ShiftCC e
-ModelShifter (`tmux send-keys`).
+Il button `Usage: context X%, plan Y%` dà già context % (FUEL) e uso del piano via
+UIA. Eventuale telemetria extra dai transcript locali (stile claudeine). Zero rete.
 
-**Problema aperto, il più grosso del progetto:** la macchina di sviluppo è
-**Windows 11, dove tmux non esiste.** Le strade sono WSL + tmux, oppure
-SendInput/AutoHotkey su Windows Terminal. La seconda è fragile: non offre una
-conferma affidabile che il tasto sia atterrato nel pane giusto — che è
-esattamente il fallimento che [window selection.md](window%20selection.md)
-identifica come inaccettabile. **Da risolvere prima di scrivere codice di
-attuazione.**
+## 6. Il costo del cambio a caldo
 
-## 5. Il cruscotto (la parte già sbloccata)
-
-Lo statusline di Claude Code esegue uno script arbitrario e gli passa JSON su
-stdin. Tutti i campi del cruscotto sono **reali e confermati**:
-
-| Strumento | Campo |
-|---|---|
-| Marcia inserita | `model.display_name`, `model.id` |
-| `FUEL` (E↔F) | `context_window.remaining_percentage` |
-| `TOK/MIN` (tach) | delta di `context_window.total_input_tokens` fra invocazioni |
-| `TOTAL ×1000 TOK` | `context_window.total_input_tokens` / `total_output_tokens` |
-| Costo sessione | `cost.total_cost_usd` |
-| Identità sessione | `session_id`, `transcript_path`, `workspace.current_dir` |
-| Soglia rossa | `exceeds_200k_tokens` |
-
-Supporta **output multi-riga e colori ANSI**. `refreshInterval: 1` in
-settings.json lo rifà girare ogni secondo: **il tach si muove davvero**, non è
-un'animazione finta.
-
-Questo è indipendente dal problema dell'attuazione e si può costruire subito.
-
-## 6. Il vincolo che nessuno dei due concorrenti mostra
-
-Un cambio marcia a metà conversazione **costa**: la cache dei prompt è legata al
-modello che ha servito la richiesta, quindi al turno successivo l'intero
-contesto viene **riletto a prezzo pieno**.
-
-La GUI deve stimarlo e mostrarlo **prima** dello shift, non dopo. È il
-differenziatore reale rispetto a ShiftCC e ModelShifter, che non lo espongono.
+Cambiare modello a metà conversazione costa (rilettura contesto a prezzo pieno). Da
+verificare se l'app Claude Desktop mostra un avviso nativo allo switch e se
+convenga anticiparlo nella nostra GUI.
 
 ## 7. Principio non negoziabile
 
-Ereditato da [window selection.md](window%20selection.md) e confermato:
+> **Il bersaglio (la conversazione) è sempre visibile prima dello shift, mai
+> dedotto dopo. Nessuno shift è "riuscito" senza conferma riletta dall'etichetta.**
 
-> **Il bersaglio deve essere sempre visibile prima dello shift, mai dedotto
-> silenziosamente dopo.**
+Nota onesta: sull'app Claude Desktop, selezionare la sessione la porta in primo
+piano — l'UX va costruita su questa verità, non nasconderla.
 
-Con più sessioni aperte, cambiare marcia a quella sbagliata non dà errore: dà
-una conversazione silenziosamente rovinata più una rilettura di contesto a
-prezzo pieno. Nessuna scorciatoia di targeting vale questo rischio.
+## 8. Non-obiettivi / fuori scope v1
 
-## 8. Non-obiettivi
-
-- Nessun broadcast a tutte le sessioni.
-- Nessuna inferenza "intelligente" del bersaglio oltre al focus esplicito.
-- Nessuna marcia automatica (niente auto-downshift su task semplici) finché la
-  leva manuale non è solida.
-- Non è un clone di ShiftCC/ModelShifter: se non aggiunge il costo-cache e il
-  targeting esplicito, non ha motivo di esistere.
+- Nessun broadcast, nessuna marcia automatica.
+- Nessun targeting implicito oltre alla selezione esplicita in tendina.
+- Non è console injection nel terminale (bersaglio sbagliato, ribaltato).
+- macOS/Linux, web, IDE: fuori scope.
 
 ## 9. Stato attuale
 
 | Area | Stato |
 |---|---|
-| Analisi concorrenti | ✅ Fatta |
-| Meccanica model/effort | ✅ Verificata sui doc |
-| Campi cruscotto | ✅ Verificati |
-| Attuatore su Windows | 🔴 **Aperto — blocca tutto** |
-| Codice | ⬜ Nessuno |
+| Bersaglio corretto individuato (app Claude Desktop MSIX) | ✅ |
+| Enumerazione conversazioni (UIA sidebar) | ✅ Provata |
+| Lettura modello/effort/telemetria (UIA) | ✅ Provata |
+| Switch modello (UIA Select) | ✅ Provato (Sonnet↔Opus, self-revert) |
+| Switch effort (UIA Slider) | ✅ Provato (High↔Medium, self-revert) |
+| Attuazione **senza rubare il focus** | 🟡 Valutato: **letture** focus-free ✅, **switch** portano l'app in primo piano ⚠️ |
+| Ladder effort completo (6 livelli) | 🟡 Valutato: slider 0–5 provato; mappa completa bloccata da apertura popup instabile |
+| Spec di build | ✅ [SPEC.md](SPEC.md) |
+| Prototipo UIA | ✅ [`prototype/`](prototype/) (`uia_shifter.ps1`, `uia_effort_slider.ps1`) |
+| Codice app | ⬜ Da costruire |
 
 ---
 
