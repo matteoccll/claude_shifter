@@ -141,8 +141,8 @@ piano — l'UX va costruita su questa verità, non nasconderla.
 | **Ladder effort completo** | ✅ **Mappato dal vivo** — vedi §3.1, salvato in `backend/gearbox.json` |
 | Attuazione **senza rubare il focus** | 🟡 Letture focus-free ✅; gli switch alzano comunque l'app ⚠️ |
 | **UIA Broker (M1)** | ✅ [`backend/`](backend/) — demone NDJSON, 9 comandi + diagnostici |
-| Riaggancio automatico se l'app si chiude/riapre | ⬜ Da fare |
-| Comando unico "capabilities" per la GUI | ⬜ Da fare |
+| Comando unico `capabilities` per la GUI | ⬜ **Prossima azione** — §10 |
+| Riaggancio automatico se l'app si chiude/riapre | ⬜ **Prossima azione** — §10 |
 | Spec di build | ✅ [SPEC.md](SPEC.md) (⚠️ §2 e §4.1 superati dalla sessione 5: vedi §3 qui) |
 | Prototipo UIA | ✅ [`prototype/`](prototype/) (`uia_shifter.ps1`, `uia_effort_slider.ps1`) |
 | GUI (frontend) | ⬜ In carico all'altro collaboratore |
@@ -151,10 +151,27 @@ piano — l'UX va costruita su questa verità, non nasconderla.
 
 ## 10. Da fare
 
-Idee raccolte, non ancora in lavorazione. Nessuna di queste è stata progettata:
-sono voci aperte, non decisioni prese.
+Due elenchi con statuto diverso: il primo è lavoro concordato e definito, il
+secondo sono idee raccolte che nessuno ha ancora progettato.
 
-### Frontend / GUI
+### Prossima azione — backend (i due pezzi mancanti)
+
+Il broker funziona ed è provato (§9), ma non è finito. Restano:
+
+1. **Comando unico `capabilities`.** Oggi la GUI dovrebbe fare tre domande
+   separate (modelli, corsa dell'effort, marcia corrente) per sapere cosa
+   disegnare. Serve una risposta sola che dica, in un colpo: quali modelli offre
+   l'app adesso, quali sono selezionabili, e quante marce ha quello attivo. È il
+   pezzo che rende utilizzabile il principio di §4.1 — senza, il frontend è
+   tentato di scriversi la griglia a mano.
+2. **Riaggancio automatico.** Se l'utente chiude e riapre Claude Desktop, il
+   broker resta agganciato a una finestra che non esiste più e ogni comando
+   fallisce finché non lo si riavvia a mano. Deve accorgersene e riattaccarsi da
+   solo.
+
+### Idee raccolte — frontend / GUI
+
+Voci aperte, non decisioni prese.
 
 - **Cruscotto dei consumi.** Grafica che mostra la percentuale di contesto e i
   token consumati dalla chat, più eventuali altri dati disponibili. La sorgente
