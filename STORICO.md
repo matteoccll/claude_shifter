@@ -20,6 +20,82 @@ stanno in [PROJECT.md](PROJECT.md).
 
 ---
 
+## 2026-07-20 (sessione 5 — backend: UIA Broker costruito e mappa del cambio)
+
+- `SETUP` — Costruito il **UIA Broker** in `backend/` come demone persistente
+  (`broker.ps1`) che parla NDJSON su stdin/stdout, più client Node
+  (`client.js`) e strumenti di collaudo (`state.js`, `dump.js`, `tree.js`,
+  `effortpopup.js`, `map.js`). Comandi: `enumerate`, `readGear`, `readUsage`,
+  `selectSession`, `setModel`, `setEffort`, `listModels`, `effortRange`,
+  `probeEffort` + diagnostici.
+- `DECISIONE` — **Broker in PowerShell, non in .NET/C#.** Motivo: `dotnet` non è
+  installato sulla macchina, mentre PowerShell 5.1 espone già
+  `System.Windows.Automation` nativamente. Zero installazioni, e riusa
+  direttamente la logica già provata nei prototipi.
+- `DECISIONE` — **Rilevamento dinamico invece di tabelle scritte a mano.** Il
+  broker non dichiara quali modelli/effort esistono: li legge dall'app a ogni
+  richiesta. Motivo: una lista hardcoded diventa falsa al primo aggiornamento di
+  Claude e il fallimento sarebbe silenzioso. Richiesta esplicita dell'utente.
+- `DECISIONE` — **Doppio aggancio agli elementi: tabella lingue + fallback
+  strutturale.** Le etichette coprono 10 lingue (inglese primario), ma sotto c'è
+  un riconoscimento per forma — il pulsante effort è "quello espandibile dopo il
+  pulsante modello", in qualunque lingua. Motivo: le traduzioni non-italiane non
+  sono verificabili su questa macchina, quindi non possono essere l'unica difesa.
+- `SCOPERTA` — **L'interfaccia dell'app segue la lingua del sistema: qui è in
+  italiano.** Il pulsante effort è `Impegno: Alto`, non `Effort: High`. La
+  SPEC.md dava per scontato l'inglese. `Usage:` invece resta in inglese.
+- `BUG` `FIX` — **Il broker si auto-interrompeva.** Per chiudere i popup premeva
+  Esc via `keybd_event`. In Claude Desktop Esc annulla il turno in corso: pilotando
+  l'app da un task che gira *dentro* la stessa app, ogni chiusura di popup
+  abbatteva il comando che la stava eseguendo. Sintomo osservato: "Background task
+  interrotto", scambiato per interruzione dell'utente. Risolto chiudendo i popup
+  con `ExpandCollapsePattern.Collapse()`; rimossa la P/Invoke di `keybd_event` per
+  rendere l'errore irripetibile. Rimosso anche `SetForegroundWindow` in attach:
+  le letture sono focus-free.
+- `BUG` `FIX` — **PowerShell 5.1 tratta lo stderr di un comando nativo come
+  errore fatale** e abbatteva la run. I log del broker finivano lì. Risolto
+  instradando i log in un file di rapporto (`makeReport` in `client.js`).
+- `FIX` — **Prestazioni: da minuti a 11 secondi.** Ogni finder richiamava una
+  scansione completa dell'albero (~900 elementi, ogni proprietà è una chiamata
+  cross-process) e una singola operazione ne faceva decine. Introdotta cache
+  della scansione con invalidazione esplicita dopo ogni azione che muta la UI, e
+  `ControlType`/`Name` letti una volta sola durante la scansione.
+- `FIX` — **File `.ps1` forzato ad ASCII puro.** PowerShell 5.1 legge gli script
+  come ANSI se non c'è il BOM: i caratteri accentati venivano mangiati e le
+  virgolette curve risultanti spezzavano il parsing. I caratteri non-ASCII sono
+  ora scritti come escape `\uXXXX`.
+- `FIX` — **Verifica del cambio modello.** Confrontava l'etichetta del pulsante
+  con il nome del menu comprensivo di decorazioni, e dichiarava fallito un cambio
+  in realtà riuscito. La normalizzazione ora ancora il nome all'inizio della
+  stringa.
+- `SCOPERTA` — **I modelli nell'app sono 7, non 4.** Fable 5, Opus 4.8, Sonnet 5,
+  Haiku 4.5 al primo livello; Opus 4.7, Opus 4.6, Sonnet 4.6 dietro la voce
+  **"Altri modelli"**. Il sottomenu **non si apre con `ExpandCollapse`**: serve
+  passarci sopra (hover). Le voci portano decorazioni da ripulire — il numero
+  della scorciatoia (`Opus 4.8 2`) e, per Fable 5, `Richiede crediti di utilizzo`.
+- `SCOPERTA` — **Il popup dell'effort non contiene i nomi dei livelli.** Dentro
+  ci sono solo lo Slider e due didascalie agli estremi (`Più veloce` /
+  `Più intelligente`). L'unico modo per enumerare i livelli è spostare il cursore
+  e rileggere l'etichetta del pulsante: è un'operazione che modifica davvero lo
+  stato, non una lettura.
+- `SCOPERTA` — **Mappa del cambio completa, letta dal vivo.** Fable 5 / Opus 4.8 /
+  Opus 4.7 / Sonnet 5: 6 marce (`Basso, Medio, Alto, Extra, Max, Ultracode`).
+  Opus 4.6 / Sonnet 4.6: 4 marce (`Basso, Medio, Alto, Max` — salta `Extra`, non
+  è la scala lunga troncata). Haiku 4.5: nessun controllo effort. Salvata in
+  `backend/gearbox.json`.
+- `SCOPERTA` — **La corsa del cursore si accorcia davvero** sui modelli ridotti
+  (`0-3` invece di `0-5`): le posizioni in più non restano disabilitate,
+  spariscono. Quindi il numero di marce è leggibile dall'app senza saperlo prima.
+- `SCOPERTA` — **Le sessioni in sidebar si identificano dal pulsante compagno**
+  `Altre opzioni per <titolo>`, che fornisce il titolo pulito; la riga cliccabile
+  si ritrova per suffisso (è nominata `<stato> <titolo>`). Il formato `#N · nome`
+  previsto da SPEC.md non esiste.
+- `SETUP` — Round-trip completo verificato: la mappatura ha cambiato modello 7
+  volte e spazzato il cursore, poi ha **ripristinato e riletto** lo stato
+  iniziale (Opus 4.8 / Alto).
+
+---
+
 ## 2026-07-20 (sessione 4 — spec GUI e divisione backend/frontend)
 
 - `DECISIONE` — **Controllo modello: manopola rotante a 4 posizioni** (Haiku / Sonnet / Opus / Fable). Scartati pulsanti separati e levette. Motivo: scelta discreta tra 4 opzioni, il gesto "girare" è intuitivo e si abbina visivamente allo stick per l'effort senza sovrapporsi.

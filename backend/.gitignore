@@ -1,0 +1,9 @@
+# Rapporti e dump generati dagli strumenti di collaudo. Transitori, e i dump
+# dell'albero UI contengono il testo delle conversazioni aperte nell'app: non
+# vanno versionati.
+*-report.txt
+out-*.txt
+tree.txt
+
+# gearbox.json NON e' ignorato di proposito: e' il risultato della mappatura,
+# non uno scarto.

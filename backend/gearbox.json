@@ -1,0 +1,187 @@
+{
+  "probedAt": "2026-07-20T19:28:55.996Z",
+  "models": [
+    {
+      "model": "Fable 5",
+      "enabled": true,
+      "min": 0,
+      "max": 5,
+      "levels": [
+        {
+          "value": 0,
+          "label": "Basso"
+        },
+        {
+          "value": 1,
+          "label": "Medio"
+        },
+        {
+          "value": 2,
+          "label": "Alto"
+        },
+        {
+          "value": 3,
+          "label": "Extra"
+        },
+        {
+          "value": 4,
+          "label": "Max"
+        },
+        {
+          "value": 5,
+          "label": "Ultracode"
+        }
+      ]
+    },
+    {
+      "model": "Opus 4.8",
+      "enabled": true,
+      "min": 0,
+      "max": 5,
+      "levels": [
+        {
+          "value": 0,
+          "label": "Basso"
+        },
+        {
+          "value": 1,
+          "label": "Medio"
+        },
+        {
+          "value": 2,
+          "label": "Alto"
+        },
+        {
+          "value": 3,
+          "label": "Extra"
+        },
+        {
+          "value": 4,
+          "label": "Max"
+        },
+        {
+          "value": 5,
+          "label": "Ultracode"
+        }
+      ]
+    },
+    {
+      "model": "Sonnet 5",
+      "enabled": true,
+      "min": 0,
+      "max": 5,
+      "levels": [
+        {
+          "value": 0,
+          "label": "Basso"
+        },
+        {
+          "value": 1,
+          "label": "Medio"
+        },
+        {
+          "value": 2,
+          "label": "Alto"
+        },
+        {
+          "value": 3,
+          "label": "Extra"
+        },
+        {
+          "value": 4,
+          "label": "Max"
+        },
+        {
+          "value": 5,
+          "label": "Ultracode"
+        }
+      ]
+    },
+    {
+      "model": "Haiku 4.5",
+      "enabled": true,
+      "effort": null,
+      "reason": "model has no effort control"
+    },
+    {
+      "model": "Opus 4.7",
+      "enabled": true,
+      "min": 0,
+      "max": 5,
+      "levels": [
+        {
+          "value": 0,
+          "label": "Basso"
+        },
+        {
+          "value": 1,
+          "label": "Medio"
+        },
+        {
+          "value": 2,
+          "label": "Alto"
+        },
+        {
+          "value": 3,
+          "label": "Extra"
+        },
+        {
+          "value": 4,
+          "label": "Max"
+        },
+        {
+          "value": 5,
+          "label": "Ultracode"
+        }
+      ]
+    },
+    {
+      "model": "Opus 4.6",
+      "enabled": true,
+      "min": 0,
+      "max": 3,
+      "levels": [
+        {
+          "value": 0,
+          "label": "Basso"
+        },
+        {
+          "value": 1,
+          "label": "Medio"
+        },
+        {
+          "value": 2,
+          "label": "Alto"
+        },
+        {
+          "value": 3,
+          "label": "Max"
+        }
+      ]
+    },
+    {
+      "model": "Sonnet 4.6",
+      "enabled": true,
+      "min": 0,
+      "max": 3,
+      "levels": [
+        {
+          "value": 0,
+          "label": "Basso"
+        },
+        {
+          "value": 1,
+          "label": "Medio"
+        },
+        {
+          "value": 2,
+          "label": "Alto"
+        },
+        {
+          "value": 3,
+          "label": "Max"
+        }
+      ]
+    }
+  ]
+}
