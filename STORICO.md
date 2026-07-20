@@ -20,6 +20,81 @@ stanno in [PROJECT.md](PROJECT.md).
 
 ---
 
+## 2026-07-21 (sessione 11 — backend: collaudo per il via libera al frontend)
+
+- `SETUP` — Collaudato tutto il backend sull'app viva per rispondere a una
+  domanda sola: si può cominciare il frontend? Passati `capabilities`, `probe`,
+  `state`, `dump`, `test.js`, `enumerate`, `selectSession`, `setModel` e
+  `setEffort` andata/ritorno, il modello senza splitter (Haiku), il riaggancio,
+  11 comandi malformati, due comandi in parallelo, la morte del broker e 7
+  minuti di inattività. **Nessun comando malformato ha cambiato lo stato
+  dell'app**, e ogni prova che sposta la marcia l'ha rimessa a posto.
+- `BUG` `FIX` — **`capabilities` dichiarava "0 marce" su un modello che ne ha 6,
+  con la lista degli errori vuota.** Visto dal vivo su Opus 4.8: la lettura del
+  cursore non si è aperta, e siccome `Op-EffortRange` in quel caso **non lancia
+  un'eccezione** ma risponde educatamente `available: false`, il guasto viaggiava
+  sulla strada buona e `Op-Capabilities` non aggiungeva niente a `errors` — quel
+  ramo scattava solo nel `catch`. Una GUI che si fida di `gears` avrebbe disegnato
+  la leva senza splitter (il caso Haiku) su un modello che lo splitter ce l'ha.
+  Chiuso segnalando in `errors` ogni lettura mancata quando il pulsante esiste, e
+  facendo tentare a `OpenEffortPopup` una seconda apertura prima di arrendersi.
+  Haiku non viene mai ritentato: lì non c'è niente da riprovare.
+- `SETUP` — Il ramo riparato non era osservabile aspettando che il popup si
+  impuntasse di nuovo, quindi è stato forzato su una copia del broker in cui il
+  popup **non si apre mai**: copia guasta → `gears 0` + errore esplicito, broker
+  vero → `gears 6` + `errors` vuoto, Haiku → `errors` vuoto (nessun falso
+  allarme). Le tre risposte sono ora distinguibili a macchina.
+- `BUG` `FIX` — **Una richiesta spedita a un broker morto non tornava mai.**
+  Né risposta né errore: la promessa restava parcheggiata per sempre, perché non
+  falliva niente — passava solo del tempo. `withDeadline` non copriva il caso:
+  ammazza l'intero processo, il che va bene per uno script e non serve a niente
+  dentro una GUI, dove il risultato sarebbe una leva bloccata su "sto cambiando"
+  senza uscita. Chiuso con una scadenza per singola richiesta (2 minuti di base,
+  regolabile per chiamata), il rifiuto immediato verso un broker già morto, e un
+  ascoltatore sull'errore di scrittura — senza quello, la morte del broker poteva
+  portarsi dietro l'intera app. Verificato: rifiuto in pochi ms, scadenza forzata
+  a 1,5 s che scatta a 1504 ms, e la risposta in ritardo che non rompe nulla.
+- `SCOPERTA` — **Il contatore dei consumi è cambiato formato durante la
+  sessione**, da `context 112.8k` a `context 15%, plan 92%`. Conferma dal vivo,
+  a poche ore di distanza, dei due formati già noti dalla sessione 7: il
+  cruscotto a percentuale è disegnabile, ma non sempre. Il broker li legge
+  entrambi.
+- `SCOPERTA` — **Il sottomenu "Altri modelli" non si è aperto con
+  `ExpandCollapse` nemmeno una volta** in tutte le prove della serata (`4 -> 4`
+  ogni volta): l'ha salvato sempre il passaggio del mouse fisico, poi rimesso
+  dov'era. Il metodo pulito, sul campo, non funziona — è l'hover che porta a casa
+  i tre modelli dietro il sottomenu.
+- `SCOPERTA` — **Tempi misurati** (variano con il carico della macchina):
+  `capabilities` 6–15 s, `setModel` 2,5–7,6 s, `selectSession` ~1,3 s,
+  `effortRange` ~0,8 s, `readGear` ~0,2 s. Siccome la griglia va richiesta di
+  nuovo dopo ogni cambio modello, un cambio marcia completo tiene la leva
+  occupata dai 9 ai 20 secondi. La scadenza per richiesta **non annulla** il
+  lavoro del broker: smette di aspettarlo, e il comando dopo si mette in fila.
+- `SCOPERTA` — 7 minuti di inattività non degradano l'aggancio: alla ripresa
+  `readGear` risponde immediato e `effortRange` legge la scala.
+- `BUG` — **`selectSession` non dice su cosa ha agito e sporca il canale.**
+  Risponde `null`, perché il dispatch butta via il titolo che l'operazione
+  produce; e quel valore non raccolto finisce **su stdout come testo**, in mezzo
+  al protocollo NDJSON (viste dal vivo tre righe di tabella PowerShell fra un
+  messaggio e l'altro). Oggi è innocuo — il client scarta le righe non-JSON — ma
+  cozza con il principio §7 di PROJECT: il bersaglio si conferma, non si deduce.
+  Lasciato aperto.
+- `BUG` — **`test.js` ha scritto "M1 PASSATO" senza aver mai provato
+  `setEffort`.** Per via del difetto qui sopra ha concluso "il modello di
+  partenza non ha lo splitter" — su Opus 4.8 — e ha saltato il passo restando
+  verde. È la stessa trappola già chiusa in `map.js` con `hasControl`, mai
+  riportata in `test.js`. Finché resta così, un collaudo verde non dimostra che
+  il cambio di effort funzioni. Lasciato aperto.
+- `SCOPERTA` — **`enumerate` ha trovato una sola conversazione**: legge quello
+  che la sidebar sta disegnando in quel momento, non l'archivio delle chat.
+- `DECISIONE` — **Il frontend parte dalla leva e dal cruscotto sulla
+  conversazione attiva, non dalla tendina.** Motivo: `capabilities` è provato,
+  stabile e copre già le due forme che la leva deve prendere (6 marce e Haiku
+  senza splitter), mentre il targeting per sessione poggia sui due pezzi più
+  deboli — `enumerate` che stasera vedeva una conversazione sola, e
+  `selectSession` che non sa dire cosa ha fatto. Costruire la UX della tendina
+  adesso significherebbe costruirla sulla parte che non regge.
+
 ## 2026-07-21 (sessione 10 — backend: controllo generale e quattro difetti chiusi)
 
 - `SETUP` — Controllo generale del backend sull'app viva: parse di `broker.ps1`,

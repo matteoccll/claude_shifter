@@ -7,18 +7,28 @@ const path = require('path');
 
 const BROKER = path.join(__dirname, 'broker.ps1');
 
+// Nessun comando del broker ha mai avvicinato questo tempo: `capabilities` sta
+// sui 6 s, `setModel` sui 2,5 s, e il piu' lento (`probeEffort`, che spazza
+// tutta la scala) sulle decine di secondi. Non e' una stima di quanto ci mette
+// una risposta: e' il punto oltre il quale si smette di aspettarla.
+const DEFAULT_TIMEOUT_MS = 120000;
+
 class Broker {
-  constructor({ verbose = false, onLog = null, onEvent = null } = {}) {
+  constructor({ verbose = false, onLog = null, onEvent = null, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
     this.verbose = verbose;
     this.onLog = onLog;
     // Unsolicited messages from the broker: attached / reattached / detached.
     // The GUI needs these to show when Claude Desktop went away and came back,
     // without polling for it.
     this.onEvent = onEvent;
+    this.timeoutMs = timeoutMs;
     this.nextId = 1;
     this.pending = new Map();
     this.ps = null;
     this._attached = null;
+    // Set once the child is gone. A request sent after that has nobody to
+    // answer it, and must be refused immediately rather than parked forever.
+    this.dead = false;
   }
 
   start() {
@@ -48,11 +58,18 @@ class Broker {
     // must reject start(), not leave the caller hanging until the deadline.
     // Rejecting an already-settled attach promise is a no-op, so these are
     // safe after a successful attach too.
-    this.ps.on('error', err => this._attachReject?.(err));
+    // Writing to a dead child raises EPIPE on the stream itself; without a
+    // listener that is an unhandled 'error' event, which takes the whole process
+    // down. In a GUI that means the app dies because Claude Desktop's broker did.
+    this.ps.stdin.on('error', err => this.onLog?.(`[client] stdin: ${err.message}`));
+
+    this.ps.on('error', err => { this.dead = true; this._attachReject?.(err); });
     this.ps.on('close', code => {
+      this.dead = true;
       this._attachReject?.(new Error(`broker exited (code ${code}) before attaching`));
-      for (const { reject } of this.pending.values()) {
-        reject(new Error(`broker exited (code ${code})`));
+      for (const p of this.pending.values()) {
+        clearTimeout(p.timer);
+        p.reject(new Error(`broker exited (code ${code})`));
       }
       this.pending.clear();
     });
@@ -79,17 +96,50 @@ class Broker {
     }
 
     const p = this.pending.get(msg.id);
-    if (!p) return;
+    if (!p) return;   // includes a reply that arrives after its own timeout
     this.pending.delete(msg.id);
+    clearTimeout(p.timer);
     if (msg.ok) p.resolve(msg.data ?? null);
     else p.reject(new Error(msg.error ?? 'broker error'));
   }
 
-  send(cmd, args = {}) {
+  // Every request carries a deadline, and one sent to a dead broker is refused
+  // on the spot.
+  //
+  // Without this a request could sit in `pending` forever: the broker dies, and
+  // the promise for a command sent afterwards is neither resolved nor rejected
+  // -- nothing failed, time simply passed. Measured: killing the broker and
+  // sending readGear produced no answer and no error, ever. `withDeadline` does
+  // not cover this; it kills the whole process, which is fine for a script and
+  // useless inside a GUI, where the result would be a lever stuck on "sto
+  // cambiando..." with no way out.
+  //
+  // The timer is deliberately NOT unref'd: a script awaiting only this promise
+  // must fail loudly, not let Node exit 0 as if nothing had been asked.
+  send(cmd, args = {}, { timeoutMs = this.timeoutMs } = {}) {
     return new Promise((resolve, reject) => {
+      if (this.dead) return reject(new Error(`${cmd}: il broker non e' piu' in esecuzione`));
+      if (!this.ps || !this.ps.stdin || !this.ps.stdin.writable) {
+        return reject(new Error(`${cmd}: broker non avviato (manca start())`));
+      }
+
       const id = this.nextId++;
-      this.pending.set(id, { resolve, reject });
-      this.ps.stdin.write(JSON.stringify({ id, cmd, ...args }) + '\n');
+      const entry = { resolve, reject, timer: null };
+      if (timeoutMs > 0) {
+        entry.timer = setTimeout(() => {
+          this.pending.delete(id);
+          reject(new Error(`${cmd}: nessuna risposta entro ${Math.round(timeoutMs / 1000)}s`));
+        }, timeoutMs);
+      }
+      this.pending.set(id, entry);
+
+      try {
+        this.ps.stdin.write(JSON.stringify({ id, cmd, ...args }) + '\n');
+      } catch (err) {
+        this.pending.delete(id);
+        clearTimeout(entry.timer);
+        reject(new Error(`${cmd}: invio fallito (${err.message})`));
+      }
     });
   }
 

@@ -142,14 +142,16 @@ piano — l'UX va costruita su questa verità, non nasconderla.
 | Attuazione **senza rubare il focus** | 🟡 Letture focus-free ✅; gli switch alzano comunque l'app ⚠️ |
 | **UIA Broker (M1)** | ✅ [`backend/`](backend/) — demone NDJSON, 10 comandi + diagnostici |
 | Comando unico `capabilities` per la GUI | ✅ Provato sull'app viva (5,8–13 s per risposta completa, a seconda del risveglio dell'albero) |
-| **Collaudo M1 end-to-end (`test.js`)** | ✅ Riscritto e passato 7/7 sull'app viva (sessione 7): selectSession + setModel + setEffort con verifica e auto-ripristino |
+| **Collaudo M1 end-to-end (`test.js`)** | 🟡 Passa sull'app viva, ma in sessione 11 ha dichiarato "PASSATO" **saltando il test dell'effort** (vedi §10): un verde non prova ancora che `setEffort` funzioni |
+| **Guasti che si distinguono dagli stati normali** | ✅ Sessione 11 — `capabilities` non può più dire "0 marce" in silenzio: una lettura mancata finisce in `errors`, e `hasControl` distingue "modello senza scala" da "scala non letta" |
+| **Nessuna richiesta resta appesa** | ✅ Sessione 11 — scadenza per singola richiesta, rifiuto immediato se il broker è morto, e la sua morte non si porta più dietro il processo chiamante |
 | Riaggancio automatico se l'app si chiude/riapre | ✅ Rilevamento provato su morte reale (`alivecheck.ps1`), riaggancio 3/3 (`reattach.js`) |
 | Scelta della finestra giusta fra le più di Claude | ✅ Si aggancia solo dove il pulsante del modello esiste |
 | **Comandi malformati non fanno danni** | ✅ Provato (sessione 10) — un argomento mancante viene **rifiutato**, non interpretato: prima `setModel` senza nome innestava Fable 5 e `setEffort` senza livello scendeva al minimo, entrambi rispondendo `ok` |
 | L'attuazione non ruba il puntatore | ✅ Il mouse serve per il sottomenu, ma viene rimesso dov'era (misurato: scarto 0 px) |
 | Spec di build | ✅ [SPEC.md](SPEC.md) (⚠️ §2 e §4.1 superati dalla sessione 5: vedi §3 qui) |
 | Prototipo UIA | ✅ [`prototype/`](prototype/) (`uia_shifter.ps1`, `uia_effort_slider.ps1`) |
-| GUI (frontend) | ⬜ In carico all'altro collaboratore |
+| GUI (frontend) | ⬜ In carico all'altro collaboratore — **via libera a partire** dalla leva + cruscotto sulla conversazione attiva (sessione 11, §10) |
 
 ---
 
@@ -164,8 +166,7 @@ I due pezzi mancanti (comando `capabilities`, riaggancio automatico) sono
 **scritti, provati e chiusi**. Anche i due difetti di `map.js` rinviati in
 sessione 8 sono stati chiusi in sessione 9: `probeEffort` è protetto come
 `setModel` (un suo errore costa un modello, non l'intera run) e lo script esce
-**3** quando dichiara la mappa incompleta, invece di 0. La coda di lavoro
-concordato sul backend è vuota.
+**3** quando dichiara la mappa incompleta, invece di 0.
 
 Il controllo generale della sessione 10 ha chiuso quattro difetti che i collaudi
 non vedevano perché nessuno di essi mandava comandi malformati: `setModel` senza
@@ -174,7 +175,51 @@ rispondendo `ok`**. Conseguenza per il frontend: il broker ora **rifiuta**
 l'argomento mancante invece di indovinarlo, quindi una chiamata a cui la GUI ha
 dimenticato un campo torna come errore e non come marcia cambiata a tradimento.
 
-Una cosa sola resta scoperta, e va detta invece che nascosta: **le due metà del
+La sessione 11 ha collaudato tutto il backend per rispondere a una domanda sola
+— si può cominciare il frontend? — e ha chiuso i due difetti che lo impedivano.
+Nessuno dei due era un errore dimenticato: **`capabilities` dichiarava "0 marce"
+su un modello che ne ha 6** perché la lettura fallita non lancia un'eccezione ma
+risponde educatamente `available: false`, e viaggiava così sulla strada buona con
+la lista errori vuota; e **una richiesta spedita a un broker morto non tornava
+mai**, perché non falliva niente, passava solo del tempo. Ora la prima finisce in
+`errors` e la seconda ha una scadenza.
+
+**Due difetti restano aperti**, entrambi piccoli e entrambi sul lato sessione:
+
+1. `selectSession` risponde `null` — non dice su cosa ha agito — e il valore che
+   il dispatch non raccoglie finisce su stdout come testo, in mezzo al protocollo
+   NDJSON. Innocuo oggi (il client scarta le righe non-JSON), ma è il principio
+   §7 che resta scoperto: il bersaglio si conferma, non si deduce.
+2. `test.js` dichiara "M1 PASSATO" anche quando salta il test dell'effort, per la
+   stessa confusione fra "modello senza scala" e "scala non letta" già chiusa in
+   `map.js` con `hasControl`. Finché resta così, un collaudo verde non prova che
+   `setEffort` funzioni.
+
+### Cosa può fare il frontend, adesso
+
+**Si parte dalla leva e dal cruscotto sulla conversazione attiva, non dalla
+tendina.** `capabilities` è una chiamata sola, provata e stabile, e copre già le
+due forme che la leva deve prendere: modello a 6 marce, e Haiku che lo splitter
+non ce l'ha (`gears: 0`, `hasEffort: false`). Ci sono anche gli eventi
+`attached`/`reattached`/`detached`, quindi la GUI sa se l'app sparisce senza
+doverlo chiedere di continuo.
+
+Tre vincoli da progettare, non da aggirare:
+
+- **È lento.** `capabilities` 6–15 s, `setModel` 2,5–7,6 s. Siccome la griglia va
+  richiesta di nuovo dopo ogni cambio modello, un cambio marcia completo occupa
+  la leva **9–20 secondi**: serve uno stato "sto innestando" onesto. E la scadenza
+  per richiesta **non annulla** il lavoro del broker, smette solo di aspettarlo.
+- **Un `setModel` fallito non prova che il modello non esista** (bug del
+  sottomenu, §10 più sotto): la GUI deve poter riprovare.
+- **`gears: 0` da solo non vuol dire "niente marce":** guardare
+  `effortRange.hasControl`, oppure `errors`.
+
+La tendina va dopo, quando `selectSession` saprà dire cosa ha fatto: oggi
+`enumerate` legge solo le conversazioni che la sidebar sta disegnando in quel
+momento — in sessione 11 ne ha vista **una**.
+
+Una cosa resta scoperta, e va detta invece che nascosta: **le due metà del
 riaggancio sono provate separatamente, non insieme.** Il rilevamento della morte
 è verificato su un processo ucciso per davvero (`alivecheck.ps1`), il riaggancio
 su una perdita simulata sull'app vera (`reattach.js`); la giuntura fra i due non

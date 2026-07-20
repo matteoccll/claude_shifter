@@ -584,24 +584,36 @@ function Op-DumpTree {
     @{ count = $lines.Count; text = ($lines -join "`n") }
 }
 
-# Open the effort popup and dump the popup window's whole subtree.
+# Open the effort popup and hand back its Slider.
 #
 # The popup renders a beat after Expand() returns, and elements grabbed too
 # early go stale (their properties read back empty), so retry until the Slider
 # actually materialises rather than trusting a fixed sleep.
+#
+# The whole open is attempted twice. Seen live 2026-07-21 on Opus 4.8: one call
+# in a long sequence came back empty while the model demonstrably had its 0-5
+# slider, and ten calls either side of it succeeded. A popup that refuses to
+# open once is the same intermittent family as the "Altri modelli" submenu, and
+# a second attempt costs nothing when the first one worked.
+#
+# An absent effort button is NOT retried: that is Haiku, a real state, not a
+# failure to read.
 function OpenEffortPopup {
-    ClosePopups
-    $eb = EffortBtn
-    if (-not $eb) { return $null }
-    if (-not (Expand $eb)) { return $null }
+    for ($try = 0; $try -lt 2; $try++) {
+        ClosePopups
+        $eb = EffortBtn
+        if (-not $eb) { return $null }
+        if (-not (Expand $eb)) { Log "effort popup: expand refused (try $try)"; continue }
 
-    for ($i = 0; $i -lt 8; $i++) {
-        Start-Sleep -Milliseconds 500
-        InvalidateWalk
-        $sl = SliderEl
-        if ($sl) {
-            try { $null = $sl.Current.ControlType; Log "popup ready after $(($i+1)*500)ms"; return $sl } catch {}
+        for ($i = 0; $i -lt 8; $i++) {
+            Start-Sleep -Milliseconds 500
+            InvalidateWalk
+            $sl = SliderEl
+            if ($sl) {
+                try { $null = $sl.Current.ControlType; Log "popup ready after $(($i+1)*500)ms"; return $sl } catch {}
+            }
         }
+        Log "effort popup: no slider after expand (try $try)"
     }
     return $null
 }
@@ -1046,6 +1058,17 @@ function Op-Capabilities {
         # hasControl stays true and this stays a failure, never a "no effort" claim.
         $effort = @{ available = $false; hasControl = $true; reason = 'effortRange failed' }
         try { $effort = Op-EffortRange } catch { $errors.Add("effortRange: $($_.Exception.Message)") }
+
+        # A failed effort read does not throw -- Op-EffortRange answers politely
+        # with available=$false -- so without this line the failure travelled the
+        # success path and `errors` came back EMPTY while `gears` came back 0.
+        # Seen live 2026-07-21 on Opus 4.8, which has six gears: a GUI trusting
+        # `gears` would have drawn Haiku's splitterless lever on a model that has
+        # a splitter. We only get here when the button exists, so anything short
+        # of a reading is a failure, never a "this model has no ladder" claim.
+        if (-not $effort.available) {
+            $errors.Add("effortRange: $($effort.reason) (il modello HA il cursore: marce non lette, non assenti)")
+        }
     } else {
         # Haiku. Not an error: an absent ladder is a real state the GUI must
         # render (the lever loses its splitter).
@@ -1065,6 +1088,12 @@ function Op-Capabilities {
 
     # Detent count, not slider span: 0..5 is six gears. The GUI draws this many
     # positions and nothing more.
+    #
+    # WARNING for the caller: gears=0 alone does NOT mean "this model has no
+    # ladder". It also comes out 0 when the ladder could not be read. The two are
+    # told apart by `effortRange.hasControl` ($false = really absent, $true = not
+    # read), and a failed read is always listed in `errors`. Never draw the lever
+    # from `gears` without looking at one of those two.
     $gears = 0
     if ($effort.available) { $gears = [int]$effort.max - [int]$effort.min + 1 }
 
