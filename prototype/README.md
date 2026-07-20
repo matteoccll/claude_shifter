@@ -13,8 +13,15 @@ on 2026-07-20. Port them into the app's UIA Broker (see [../SPEC.md](../SPEC.md)
   popup **Slider** (0–5, `Faster ↔ Smarter`); drive it via
   `RangeValuePattern.SetValue` and confirm from the `Effort: <level>` button label.
 
+- **`stick_demo.html`** — **interaction reference for the GUI** (SPEC.md §4.3).
+  A single stick: **left-drag** slides it through the 6-gear H-gate (effort),
+  **right-drag** (or mouse wheel) rotates the knob through the 4 models. Open it
+  in a browser; `▶ auto demo` plays both gestures. Defines the *behaviour* the
+  shipped GUI must reproduce and the state the Broker must be driven with —
+  **the visual styling is placeholder and will be redesigned.**
+
 Requires Windows + `System.Windows.Automation` (built into .NET). The Claude Desktop
-app must be installed/running.
+app must be installed/running. (`stick_demo.html` is standalone — just open it.)
 
 ## Hard-won facts (read before changing the approach)
 

@@ -1,0 +1,597 @@
+<title>MODEL AND FURIOUS — Stick Demo</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #0b0a07;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  font-family: 'Courier New', monospace;
+  gap: 18px;
+  padding: 24px;
+  user-select: none;
+}
+
+/* ── READOUT ─────────────────────────────────────────── */
+.readout {
+  background: #141210;
+  border: 1px solid #2a2820;
+  border-radius: 8px;
+  padding: 12px 28px;
+  display: flex;
+  gap: 28px;
+  align-items: center;
+  box-shadow: inset 0 2px 8px rgba(0,0,0,.6);
+}
+.r-block { display: flex; flex-direction: column; gap: 3px; }
+.r-label { font-size: 8px; letter-spacing: .15em; text-transform: uppercase; color: #3a4030; }
+.r-val {
+  font-size: 17px; font-weight: bold;
+  color: #e8960a; text-shadow: 0 0 12px #e8960a;
+  min-width: 90px; font-variant-numeric: tabular-nums;
+}
+.r-sep { width: 1px; height: 30px; background: #2a2820; }
+
+/* ── PANEL ───────────────────────────────────────────── */
+.panel {
+  width: 280px;
+  height: 430px;
+  background: linear-gradient(165deg, #c0d8c4 0%, #a8c8ac 60%, #98b89c 100%);
+  border-radius: 14px;
+  border: 3px solid #7a9a7e;
+  box-shadow:
+    inset 0 2px 0 rgba(255,255,255,.55),
+    inset 0 -3px 6px rgba(0,0,0,.2),
+    0 16px 56px rgba(0,0,0,.95);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Chrome screws */
+.screw {
+  position: absolute;
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 28%, #f0f4f8, #8090a0);
+  box-shadow: 0 1px 3px rgba(0,0,0,.6);
+  z-index: 20;
+}
+.screw::after {
+  content: '';
+  position: absolute;
+  width: 55%; height: 1.5px;
+  background: rgba(0,0,0,.35);
+  top: 50%; left: 22%;
+  transform: rotate(45deg) translateY(-50%);
+}
+.s-tl { top: 10px; left: 10px; }
+.s-tr { top: 10px; right: 10px; }
+.s-bl { bottom: 10px; left: 10px; }
+.s-br { bottom: 10px; right: 10px; }
+
+/* ── GATE & SHAFT SVG ────────────────────────────────── */
+.gate-svg, .shaft-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+.gate-svg { z-index: 1; }
+.shaft-svg { z-index: 5; }
+
+/* ── BALL ASSEMBLY ───────────────────────────────────── */
+.ball-asm {
+  position: absolute;
+  width: 150px; height: 150px;
+  z-index: 10;
+  pointer-events: none;
+  transition: left .3s cubic-bezier(.34,1.35,.64,1),
+              top  .3s cubic-bezier(.34,1.35,.64,1);
+}
+
+/* Model labels around ball */
+.model-ring { position: absolute; inset: 0; pointer-events: none; }
+.ml {
+  position: absolute;
+  font-size: 7px; letter-spacing: .12em;
+  text-transform: uppercase;
+  color: rgba(30,60,35,.45);
+  font-weight: bold;
+  transition: color .25s;
+  white-space: nowrap;
+}
+.ml.active { color: rgba(15,45,20,.85); }
+.ml[data-dir="top"]    { top: 2px;    left: 50%; transform: translateX(-50%); }
+.ml[data-dir="right"]  { top: 50%;    right: 0;  transform: translateY(-50%); }
+.ml[data-dir="bottom"] { bottom: 2px; left: 50%; transform: translateX(-50%); }
+.ml[data-dir="left"]   { top: 50%;    left: 0;   transform: translateY(-50%); }
+
+/* The ball */
+.ball {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 78px; height: 78px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 28% 22%,
+    #ffffff 0%,
+    #ecf2f8 14%,
+    #b4c4d4 44%,
+    #6888a0 68%,
+    #243040 100%
+  );
+  box-shadow:
+    0 10px 28px rgba(0,0,0,.9),
+    inset 0 3px 0 rgba(255,255,255,.95),
+    inset 0 -4px 8px rgba(0,0,0,.45);
+  cursor: grab;
+  pointer-events: all;
+  transition: transform .32s cubic-bezier(.34,1.5,.64,1), box-shadow .15s;
+  transform-origin: center center;
+}
+.ball:active { cursor: grabbing; }
+.ball.lit {
+  box-shadow:
+    0 10px 28px rgba(0,0,0,.9),
+    0 0 0 3px rgba(160,200,165,.5),
+    inset 0 3px 0 rgba(255,255,255,.95),
+    inset 0 -4px 8px rgba(0,0,0,.45);
+}
+
+/* Engraved H-schema on ball surface */
+.ball-eng {
+  position: absolute;
+  inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  font-size: 8px; line-height: 1.5;
+  letter-spacing: .04em;
+  color: rgba(255,255,255,.3);
+  pointer-events: none;
+}
+.ball-eng span { display: block; text-align: center; }
+
+/* Orange indicator dot */
+.ball-dot {
+  position: absolute;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: #e8960a;
+  box-shadow: 0 0 10px #e8960a, 0 0 5px rgba(232,150,10,.7);
+  top: 8px; left: 50%;
+  margin-left: -5px;
+  pointer-events: none;
+}
+
+/* ── BOOT ────────────────────────────────────────────── */
+.boot-wrap {
+  position: absolute;
+  left: 50%; transform: translateX(-50%);
+  z-index: 8;
+}
+.boot-rim {
+  width: 126px; height: 90px;
+  border-radius: 10px;
+  background: #98b89c;
+  border: 3px solid #7a9a7e;
+  box-shadow:
+    inset 0 3px 6px rgba(0,0,0,.28),
+    inset 0 -1px 0 rgba(255,255,255,.35),
+    0 0 0 2px rgba(255,255,255,.18);
+  display: flex; align-items: center; justify-content: center;
+  position: relative;
+}
+/* screws on rim */
+.boot-rim::before, .boot-rim::after {
+  content: '';
+  position: absolute;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: radial-gradient(circle at 30% 28%, #e8eef4, #6878a0);
+  box-shadow: 0 1px 3px rgba(0,0,0,.55);
+}
+.boot-rim::before { top: 7px; left: 7px; }
+.boot-rim::after  { top: 7px; right: 7px; }
+
+.boot {
+  width: 86px; height: 70px;
+  background: radial-gradient(ellipse at 42% 26%, #a05530 0%, #6a3018 52%, #38100a 100%);
+  border-radius: 44% 44% 32% 32% / 28% 28% 48% 48%;
+  box-shadow: 0 8px 20px rgba(0,0,0,.65), inset 0 4px 0 rgba(255,255,255,.07);
+  position: relative;
+}
+/* shaft hole */
+.boot::after {
+  content: '';
+  position: absolute;
+  top: 9px; left: 50%; transform: translateX(-50%);
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: #120400;
+  box-shadow: inset 0 3px 8px rgba(0,0,0,1);
+}
+
+/* ── HINT ────────────────────────────────────────────── */
+.hint {
+  position: absolute;
+  bottom: 56px; left: 50%; transform: translateX(-50%);
+  background: rgba(10,10,8,.88);
+  border: 1px solid rgba(180,210,185,.25);
+  border-radius: 4px;
+  padding: 4px 12px;
+  font-size: 8px; letter-spacing: .13em;
+  text-transform: uppercase; color: #e8960a;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .18s;
+  z-index: 25; white-space: nowrap;
+}
+.hint.on { opacity: 1; }
+
+/* ── LABEL ───────────────────────────────────────────── */
+.stick-label {
+  position: absolute;
+  bottom: 32px; left: 50%; transform: translateX(-50%);
+  font-size: 7px; letter-spacing: .13em;
+  text-transform: uppercase;
+  color: rgba(30,60,35,.42);
+  white-space: nowrap;
+}
+
+/* ── DEMO BUTTON ─────────────────────────────────────── */
+.demo-btn {
+  background: transparent;
+  border: 1px solid rgba(160,200,165,.25);
+  border-radius: 6px;
+  color: rgba(180,220,185,.5);
+  font-family: 'Courier New', monospace;
+  font-size: 8px; letter-spacing: .14em;
+  text-transform: uppercase;
+  padding: 8px 22px;
+  cursor: pointer;
+  transition: all .2s;
+}
+.demo-btn:hover {
+  border-color: rgba(160,200,165,.5);
+  color: rgba(180,220,185,.85);
+}
+.demo-btn:disabled { opacity: .35; cursor: default; }
+
+@keyframes land {
+  0%   { box-shadow: 0 10px 28px rgba(0,0,0,.9), inset 0 3px 0 rgba(255,255,255,.95), inset 0 -4px 8px rgba(0,0,0,.45); }
+  40%  { box-shadow: 0 4px 12px rgba(0,0,0,.9), 0 0 0 6px rgba(232,150,10,.2), inset 0 3px 0 rgba(255,255,255,.95), inset 0 -4px 8px rgba(0,0,0,.45); }
+  100% { box-shadow: 0 10px 28px rgba(0,0,0,.9), inset 0 3px 0 rgba(255,255,255,.95), inset 0 -4px 8px rgba(0,0,0,.45); }
+}
+.ball.land { animation: land .35s ease; }
+</style>
+
+<!-- READOUT -->
+<div class="readout">
+  <div class="r-block">
+    <div class="r-label">Modello</div>
+    <div class="r-val" id="d-model">Sonnet 5</div>
+  </div>
+  <div class="r-sep"></div>
+  <div class="r-block">
+    <div class="r-label">Effort</div>
+    <div class="r-val" id="d-effort">High</div>
+  </div>
+  <div class="r-sep"></div>
+  <div class="r-block">
+    <div class="r-label">Marcia</div>
+    <div class="r-val" id="d-gear">4</div>
+  </div>
+</div>
+
+<!-- PANEL -->
+<div class="panel" id="panel">
+  <div class="screw s-tl"></div>
+  <div class="screw s-tr"></div>
+  <div class="screw s-bl"></div>
+  <div class="screw s-br"></div>
+
+  <svg class="gate-svg" id="gate-svg"></svg>
+
+  <svg class="shaft-svg" id="shaft-svg">
+    <defs>
+      <linearGradient id="sg" gradientUnits="userSpaceOnUse">
+        <stop offset="0%"   stop-color="#c8d4e0"/>
+        <stop offset="100%" stop-color="#303840"/>
+      </linearGradient>
+    </defs>
+    <path id="shaft-path" fill="url(#sg)" opacity=".88"/>
+  </svg>
+
+  <!-- Ball assembly -->
+  <div class="ball-asm" id="ball-asm">
+    <div class="model-ring">
+      <span class="ml" data-dir="top"    data-idx="0">Haiku</span>
+      <span class="ml" data-dir="right"  data-idx="1">Sonnet</span>
+      <span class="ml" data-dir="bottom" data-idx="2">Opus</span>
+      <span class="ml" data-dir="left"   data-idx="3">Fable</span>
+    </div>
+    <div class="ball" id="ball">
+      <div class="ball-eng" id="ball-eng">
+        <span>1 · 3 · 5</span>
+        <span style="opacity:.5;font-size:6px">─────────</span>
+        <span>2 · 4 · 6</span>
+      </div>
+      <div class="ball-dot" id="ball-dot"></div>
+    </div>
+  </div>
+
+  <!-- Boot -->
+  <div class="boot-wrap" style="top:295px" id="boot-wrap">
+    <div class="boot-rim">
+      <div class="boot"></div>
+    </div>
+  </div>
+
+  <!-- Hint -->
+  <div class="hint" id="hint"></div>
+
+  <!-- Label -->
+  <div class="stick-label">sin: marcia &nbsp;│&nbsp; des o rotella: modello</div>
+</div>
+
+<button class="demo-btn" id="demo-btn">▶ auto demo</button>
+
+<script>
+// ── DATA ──────────────────────────────────────────────
+const MODELS       = ['Haiku 4.5','Sonnet 5','Opus 4.8','Fable 5'];
+const EFFORTS      = ['Fastest','Fast','Balanced','High','Very High','Smartest'];
+const GEAR_EFFORT  = {1:0, 2:1, 3:2, 4:3, 5:4, 6:5};
+const MODEL_ANGLES = [0, 90, 180, 270]; // Haiku=top, Sonnet=right, Opus=bottom, Fable=left
+
+// Gear grid in panel pixels
+const COL = [80, 140, 200];
+const ROW = [148, 210];
+const GEAR_POS = {
+  1:{x:COL[0],y:ROW[0]}, 2:{x:COL[0],y:ROW[1]},
+  3:{x:COL[1],y:ROW[0]}, 4:{x:COL[1],y:ROW[1]},
+  5:{x:COL[2],y:ROW[0]}, 6:{x:COL[2],y:ROW[1]},
+};
+const BOOT_C = {x:140, y:320};
+const ASM    = 150; // ball-asm size
+
+// ── STATE ─────────────────────────────────────────────
+let curGear    = 4;
+let curModel   = 1;  // Sonnet
+let ballRot    = 90; // matches Sonnet (right = 90°)
+let isDragging = false;
+let dragBtn    = -1;
+let dragCX = 0, dragCY = 0, dragStartAngle = 0, dragStartRot = 0;
+
+// ── DOM ───────────────────────────────────────────────
+const ballAsm  = document.getElementById('ball-asm');
+const ball     = document.getElementById('ball');
+const shaftP   = document.getElementById('shaft-path');
+const hint     = document.getElementById('hint');
+const demoBtn  = document.getElementById('demo-btn');
+const mlabels  = document.querySelectorAll('.ml');
+const sg       = document.getElementById('sg');
+
+// ── GATE SVG ──────────────────────────────────────────
+(function buildGate(){
+  const svg = document.getElementById('gate-svg');
+  const gc  = 'rgba(40,80,45,0.22)';
+  const neutralY = (ROW[0]+ROW[1])/2; // 179
+
+  let s = '';
+  // neutral horizontal lane
+  s += `<line x1="${COL[0]}" y1="${neutralY}" x2="${COL[2]}" y2="${neutralY}" stroke="${gc}" stroke-width="1.2"/>`;
+  // vertical columns
+  COL.forEach(cx => {
+    s += `<line x1="${cx}" y1="${ROW[0]}" x2="${cx}" y2="${ROW[1]}" stroke="${gc}" stroke-width="1.2"/>`;
+  });
+  // gear numbers
+  const nums = {
+    1:{x:COL[0]-18,y:ROW[0]+5}, 2:{x:COL[0]-18,y:ROW[1]+5},
+    3:{x:COL[1]+8, y:ROW[0]+5}, 4:{x:COL[1]+8, y:ROW[1]+5},
+    5:{x:COL[2]+8, y:ROW[0]+5}, 6:{x:COL[2]+8, y:ROW[1]+5},
+  };
+  Object.entries(nums).forEach(([g, p]) => {
+    s += `<text x="${p.x}" y="${p.y}" font-size="9" fill="rgba(30,65,35,.32)" font-family="Courier New">${g}</text>`;
+  });
+  svg.innerHTML = s;
+})();
+
+// ── SHAFT ─────────────────────────────────────────────
+function updateShaft(bx, by){
+  const ex = BOOT_C.x, ey = BOOT_C.y;
+  const dx = bx-ex, dy = by-ey;
+  const len = Math.hypot(dx, dy);
+  if(len < 1) return;
+  const nx = -dy/len, ny = dx/len;
+  const tw = 6.5, bw = 3.5;
+  const pts = [
+    [bx+nx*tw, by+ny*tw],
+    [bx-nx*tw, by-ny*tw],
+    [ex-nx*bw, ey-ny*bw],
+    [ex+nx*bw, ey+ny*bw],
+  ];
+  shaftP.setAttribute('d', `M ${pts.map(p=>p.join(' ')).join(' L ')} Z`);
+  // gradient along shaft direction
+  sg.setAttribute('x1', bx); sg.setAttribute('y1', by);
+  sg.setAttribute('x2', ex); sg.setAttribute('y2', ey);
+}
+
+// ── SET GEAR ──────────────────────────────────────────
+function setGear(g, anim = true){
+  curGear = g;
+  const p = GEAR_POS[g];
+  ballAsm.style.transition = anim
+    ? 'left .3s cubic-bezier(.34,1.35,.64,1), top .3s cubic-bezier(.34,1.35,.64,1)'
+    : 'none';
+  ballAsm.style.left = (p.x - ASM/2) + 'px';
+  ballAsm.style.top  = (p.y - ASM/2) + 'px';
+  updateShaft(p.x, p.y);
+  ball.classList.remove('land');
+  void ball.offsetWidth;
+  ball.classList.add('land');
+  updateReadout();
+}
+
+// ── SET MODEL ─────────────────────────────────────────
+function setModel(idx, anim = true){
+  curModel = idx;
+  ballRot  = MODEL_ANGLES[idx];
+  ball.style.transition = anim
+    ? 'transform .35s cubic-bezier(.34,1.5,.64,1)'
+    : 'none';
+  // preserve centering translate + add rotation
+  ball.style.transform = `translate(-50%,-50%) rotate(${ballRot}deg)`;
+  mlabels.forEach(l => l.classList.toggle('active', +l.dataset.idx === idx));
+  updateReadout();
+}
+
+// ── READOUT ───────────────────────────────────────────
+function updateReadout(){
+  document.getElementById('d-model').textContent  = MODELS[curModel];
+  document.getElementById('d-effort').textContent = EFFORTS[GEAR_EFFORT[curGear]];
+  document.getElementById('d-gear').textContent   = curGear;
+}
+
+// ── NEAREST GEAR ──────────────────────────────────────
+function nearestGear(px, py){
+  let best = 1, bd = Infinity;
+  Object.entries(GEAR_POS).forEach(([g,p]) => {
+    const d = Math.hypot(px-p.x, py-p.y);
+    if(d < bd){ bd = d; best = +g; }
+  });
+  return best;
+}
+
+// ── LIVE PREVIEW (left drag) ──────────────────────────
+function previewGear(g){
+  const p = GEAR_POS[g];
+  ballAsm.style.transition = 'none';
+  ballAsm.style.left = (p.x - ASM/2) + 'px';
+  ballAsm.style.top  = (p.y - ASM/2) + 'px';
+  updateShaft(p.x, p.y);
+}
+
+// ── LIVE ROTATE (right drag) ──────────────────────────
+function previewRotation(deg){
+  ball.style.transition = 'none';
+  ball.style.transform  = `translate(-50%,-50%) rotate(${deg}deg)`;
+  const norm = ((deg % 360) + 360) % 360;
+  const ni   = Math.round(norm / 90) % 4;
+  mlabels.forEach(l => l.classList.toggle('active', +l.dataset.idx === ni));
+}
+
+// ── POINTER EVENTS (più affidabili in iframe) ─────────
+const panel = document.getElementById('panel');
+document.addEventListener('contextmenu', e => e.preventDefault());
+
+ball.addEventListener('mouseenter', () => ball.classList.add('lit'));
+ball.addEventListener('mouseleave', () => { if(!isDragging) ball.classList.remove('lit'); });
+
+ball.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  ball.setPointerCapture(e.pointerId);
+  isDragging = true;
+  dragBtn    = e.button; // 0=sinistro, 2=destro
+
+  const pr = panel.getBoundingClientRect();
+  const p  = GEAR_POS[curGear];
+  dragCX = pr.left + p.x;
+  dragCY = pr.top  + p.y;
+
+  hint.textContent = dragBtn === 0 ? '⇄  cambio marcia' : '⟲  rotazione modello';
+  hint.classList.add('on');
+  ball.classList.add('lit');
+});
+
+ball.addEventListener('pointermove', e => {
+  if(!isDragging) return;
+  e.preventDefault();
+
+  if(dragBtn === 0){
+    // Gear: trova la marcia più vicina alla posizione del mouse nel panel
+    const pr = panel.getBoundingClientRect();
+    previewGear(nearestGear(e.clientX - pr.left, e.clientY - pr.top));
+
+  } else if(dragBtn === 2){
+    // Modello: il puntino del pomello punta verso il mouse (angolo assoluto)
+    // atan2: 0=destra, -90=alto, 90=basso → +90 per avere 0=alto (Haiku in cima)
+    const angle = Math.atan2(e.clientY - dragCY, e.clientX - dragCX) * 180 / Math.PI;
+    const rot   = ((angle + 90) % 360 + 360) % 360;
+    previewRotation(rot);
+  }
+});
+
+ball.addEventListener('pointerup', e => {
+  if(!isDragging) return;
+  isDragging = false;
+  hint.classList.remove('on');
+  ball.classList.remove('lit');
+
+  if(dragBtn === 0){
+    const pr = panel.getBoundingClientRect();
+    setGear(nearestGear(e.clientX - pr.left, e.clientY - pr.top));
+
+  } else if(dragBtn === 2){
+    const angle = Math.atan2(e.clientY - dragCY, e.clientX - dragCX) * 180 / Math.PI;
+    const rot   = ((angle + 90) % 360 + 360) % 360;
+    setModel(Math.round(rot / 90) % 4);
+  }
+});
+
+ball.addEventListener('pointercancel', () => {
+  isDragging = false;
+  hint.classList.remove('on');
+  ball.classList.remove('lit');
+});
+
+// Rotella sul pomello → modello successivo/precedente (alternativa al tasto destro)
+ball.addEventListener('wheel', e => {
+  e.preventDefault();
+  const step = e.deltaY > 0 ? 1 : -1;
+  setModel((curModel + step + 4) % 4);
+  hint.textContent = '⟲  rotazione modello';
+  hint.classList.add('on');
+  clearTimeout(ball._wt);
+  ball._wt = setTimeout(() => hint.classList.remove('on'), 700);
+}, { passive: false });
+
+// ── AUTO DEMO ─────────────────────────────────────────
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function autoDemo(){
+  demoBtn.disabled = true;
+  demoBtn.textContent = '⏸ demo in corso...';
+
+  const seq = [
+    {g:1, m:0}, // Haiku / Fastest
+    {g:3, m:0},
+    {g:2, m:1}, // Sonnet
+    {g:5, m:1},
+    {g:6, m:2}, // Opus
+    {g:4, m:2},
+    {g:5, m:3}, // Fable
+    {g:3, m:3},
+    {g:4, m:1}, // back to Sonnet / High
+  ];
+
+  for(const s of seq){
+    setGear(s.g);
+    await sleep(480);
+    setModel(s.m);
+    await sleep(640);
+  }
+
+  demoBtn.disabled = false;
+  demoBtn.textContent = '▶ auto demo';
+}
+demoBtn.addEventListener('click', autoDemo);
+
+// ── INIT ──────────────────────────────────────────────
+setGear(4, false);
+setModel(1, false);
+requestAnimationFrame(() => updateShaft(GEAR_POS[4].x, GEAR_POS[4].y));
+</script>
