@@ -37,6 +37,14 @@ stanno in `PROJECT.md`.
 - Non riscrivere le voci passate. Una decisione ribaltata si registra con una
   voce nuova che la ribalta.
 
+## Sviluppo parallelo
+
+Backend (UIA Broker) e frontend (GUI Electron) vengono sviluppati
+**contemporaneamente da due collaboratori distinti**: Simone segue il backend,
+l'altro collaboratore segue il frontend. I due lati verranno integrati in una
+fase successiva. Tienilo a mente quando proponi architetture o suggerisci
+modifiche: non dare per scontato che chi chiede stia lavorando su entrambi i lati.
+
 ## Convenzioni di lavoro
 
 - I fatti su cosa Claude Code permette (campi statusline, comandi, limiti degli

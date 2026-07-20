@@ -20,6 +20,15 @@ stanno in [PROJECT.md](PROJECT.md).
 
 ---
 
+## 2026-07-20 (sessione 4 — spec GUI e divisione backend/frontend)
+
+- `DECISIONE` — **Controllo modello: manopola rotante a 4 posizioni** (Haiku / Sonnet / Opus / Fable). Scartati pulsanti separati e levette. Motivo: scelta discreta tra 4 opzioni, il gesto "girare" è intuitivo e si abbina visivamente allo stick per l'effort senza sovrapporsi.
+- `DECISIONE` — **Unico stick con doppio gesto: clic sinistro = sposta in H (effort), clic destro = ruota pomello (modello).** Il pomello in cima allo stick gestisce entrambi gli assi con distinzione netta via tasto mouse, evitando conflitti tra gesto lineare e gesto rotazionale. In Electron il menu contestuale del tasto destro viene disabilitato e il gesto diventa dedicato.
+- `DECISIONE` — **Feedback discoverability: targhetta incisa sul pannello** con etichette "sin → cambia marcia / des → ruota modello". Stile engraved (testo piccolo, maiuscoletto, colore smorzato) — parte del design della plancia, non un tooltip aggiunto dopo.
+- `DECISIONE` — **Sviluppo parallelo: backend e frontend assegnati a due collaboratori distinti.** Backend (UIA Broker) sviluppato da Simone; frontend (GUI Electron) sviluppato dall'altro collaboratore. I due lati verranno integrati in una fase successiva.
+
+---
+
 ## 2026-07-20 (sessione 3 — correzione bersaglio: app Claude Desktop, non terminale)
 
 - `DECISIONE` — **RIBALTATA la sessione 2.** Il bersaglio NON è Claude Code nel

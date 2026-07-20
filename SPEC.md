@@ -151,7 +151,14 @@ Uses UI Automation (`System.Windows.Automation` / equivalent). Responsibilities:
 - **One window.** Dropdown = the app's conversations (from `enumerateSessions`).
   Selecting one calls `selectSession` (navigates the app) and shows its gear.
   Persistent label of the bound conversation (Principle §7).
-- Main lever + effort splitter, driven via the Broker.
+- **Single stick, two gestures:**
+  - left-click + drag → move stick in H-gate → change gear (effort)
+  - right-click + drag → rotate the knob in place → change model
+  - Right-click context menu is suppressed in Electron.
+- **Rotary knob indicator** (4 positions: Haiku / Sonnet / Opus / Fable) reflects
+  current model; the right-click drag gesture rotates it.
+- **Engraved label** beneath the knob: "left → gear / right → model" —
+  passive discoverability, dashboard style.
 - **Cruscotto:** context % + plan % from `readUsage`.
 - **Shift feedback:** landed / failed from the Broker's verified read-back.
 - Be explicit in the UX that shifting a session **foregrounds that conversation** in
