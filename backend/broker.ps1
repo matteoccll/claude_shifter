@@ -34,6 +34,10 @@ public class W {
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern int GetWindowTextLength(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hwnd);
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
+    [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hwnd);
+    [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd, out RECT r);
+    [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
     // Deliberately no keybd_event / SendInput: synthetic keystrokes land in the
     // Claude window as real input, and Escape there cancels the running turn.
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
@@ -45,20 +49,29 @@ public class W {
     // scaled display.
     [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
 
-    public static IntPtr FindClaudeHwnd(out uint outPid) {
-        IntPtr found = IntPtr.Zero; uint foundPid = 0;
+    public class CW { public IntPtr Hwnd; public uint Pid; public long Area; }
+
+    // Every visible Claude window, not just the first one found. Taking the
+    // first was a real bug: this app owns several windows, and a re-attach
+    // grabbed a small one with no model button in it, after which every command
+    // failed with "elements not found". Area lets the caller try the main
+    // window before the small fry.
+    public static CW[] FindClaudeWindows() {
+        var list = new System.Collections.Generic.List<CW>();
         EnumWindows((hwnd, lp) => {
+            if (!IsWindowVisible(hwnd)) return true;
             if (GetWindowTextLength(hwnd) == 0) return true;
             uint pid; GetWindowThreadProcessId(hwnd, out pid);
             try {
                 var p = Process.GetProcessById((int)pid);
                 if (!p.ProcessName.Equals("Claude", StringComparison.OrdinalIgnoreCase)) return true;
-                found = hwnd; foundPid = pid; return false;
+                RECT r; GetWindowRect(hwnd, out r);
+                long area = (long)(r.Right - r.Left) * (r.Bottom - r.Top);
+                list.Add(new CW { Hwnd = hwnd, Pid = pid, Area = area });
             } catch {}
             return true;
         }, IntPtr.Zero);
-        outPid = foundPid;
-        return found;
+        return list.ToArray();
     }
 }
 "@
@@ -159,35 +172,60 @@ function Attach {
     # error, and the GUI can say "l'app e' chiusa" instead.
     param([bool]$Launch = $true)
 
-    $p0 = [uint32]0
-    $h  = [W]::FindClaudeHwnd([ref]$p0)
+    $wins = @([W]::FindClaudeWindows() | Sort-Object -Property Area -Descending)
 
-    if ($h -eq [IntPtr]::Zero) {
+    if ($wins.Count -eq 0) {
         if (-not $Launch) { Log "Claude Desktop not running"; return $false }
         Log "Claude Desktop not found - launching"
         Start-Process "shell:AppsFolder\Claude_pzs8sxrjxfjjc!Claude"
         Start-Sleep -Seconds 4
-        $h = [W]::FindClaudeHwnd([ref]$p0)
-        if ($h -eq [IntPtr]::Zero) { return $false }
+        $wins = @([W]::FindClaudeWindows() | Sort-Object -Property Area -Descending)
+        if ($wins.Count -eq 0) { return $false }
     }
 
-    $script:hwnd = $h
-    $script:pid0 = $p0
-    # Restore if minimised so the tree exists, but do not raise it: reads are
-    # focus-free and stealing focus from whatever the user is doing is rude.
-    [W]::ShowWindow($h, 9) | Out-Null   # SW_RESTORE
-    Start-Sleep -Milliseconds 900
+    Log "candidate Claude windows: $($wins.Count)"
 
-    $script:root = $A::FromHandle($h)
+    # The acceptance test is the model button, not an element count. A count
+    # threshold accepted a secondary window with 49 named elements and no lever
+    # in it, and every command after that failed with "elements not found". The
+    # button is what every operation actually needs, so that is what we look for.
+    $fallback = $null
+    foreach ($w in $wins) {
+        Log "trying hwnd=$($w.Hwnd) pid=$($w.Pid) area=$($w.Area)"
+        $script:hwnd = $w.Hwnd
+        $script:pid0 = $w.Pid
 
-    # Chromium keeps its a11y tree asleep until a UIA client walks it. Retry
-    # until the tree is populated; this process then stays attached for life.
-    for ($i = 0; $i -lt 10; $i++) {
+        # Restore only if minimised -- a minimised window has no tree to read.
+        # Never raise: reads are focus-free, and stealing focus from whatever the
+        # user is doing is rude.
+        if ([W]::IsIconic($w.Hwnd)) { [W]::ShowWindow($w.Hwnd, 9) | Out-Null }   # SW_RESTORE
+        Start-Sleep -Milliseconds 600
+
+        $script:root = $A::FromHandle($w.Hwnd)
+
+        # Chromium keeps its a11y tree asleep until a UIA client walks it, so a
+        # cold window needs a few passes before it has anything in it.
+        for ($i = 0; $i -lt 5; $i++) {
+            InvalidateWalk
+            $named = @(Walk | Where-Object { $_.Nm.Length -gt 0 }).Count
+            $lever = $null -ne (ModelBtn)
+            Log "  wake[$i] named=$named lever=$lever"
+            if ($lever) { Log "attached to hwnd=$($w.Hwnd) pid=$($w.Pid)"; return $true }
+            if ($named -gt 40 -and -not $fallback) { $fallback = $w }
+            Start-Sleep -Milliseconds 1500
+        }
+    }
+
+    # No window had a lever. Not necessarily broken: the app can legitimately be
+    # sitting on a screen with no model button. Bind to the richest window we saw
+    # so reads that do not need the lever still work, and say so.
+    if ($fallback) {
+        Log "WARNING: no window exposed a model button - falling back to hwnd=$($fallback.Hwnd)"
+        $script:hwnd = $fallback.Hwnd
+        $script:pid0 = $fallback.Pid
+        $script:root = $A::FromHandle($fallback.Hwnd)
         InvalidateWalk
-        $named = @(Walk | Where-Object { $_.Nm.Length -gt 0 }).Count
-        Log "wake[$i] named=$named"
-        if ($named -gt 40) { return $true }
-        Start-Sleep -Seconds 2
+        return $true
     }
     return $false
 }
@@ -201,10 +239,16 @@ function Attach {
 # Three checks, cheapest first, because this runs on every single command:
 #   1. the handle still names a window,
 #   2. the process we attached to is still alive and still Claude,
-#   3. the UIA root still answers a property read.
+#   3. the UIA root still answers a LIVE property read.
 # The third is what catches a window that Windows still lists but whose
 # accessibility tree died with the renderer. One cross-process read, ~1 ms --
 # a full tree walk here would cost a second per command.
+#
+# It must be GetCurrentPropertyValue, not $root.Current.Name. Measured with
+# alivecheck.ps1: after the target process is killed, .Current.Name keeps
+# answering happily from a cached value, so a check written that way reports a
+# healthy tree over a corpse. GetCurrentPropertyValue goes and asks, and throws
+# when there is nobody left to answer.
 #
 # Deliberately NOT checked: whether FindClaudeHwnd still returns *our* handle.
 # It returns the first Claude window it meets, so with two windows open that
@@ -216,7 +260,7 @@ function IsAlive {
         $p = Get-Process -Id ([int]$script:pid0) -ErrorAction Stop
         if ($p.ProcessName -ne 'Claude') { return $false }
     } catch { return $false }
-    try { $null = $script:root.Current.Name } catch { return $false }
+    try { $null = $script:root.GetCurrentPropertyValue($A::NameProperty) } catch { return $false }
     return $true
 }
 

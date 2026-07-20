@@ -69,6 +69,37 @@ stanno in [PROJECT.md](PROJECT.md).
   singolo** nel JSON. `Broker.capabilities()` normalizza `models` ed `errors` con
   `[].concat(...)`: se un giorno l'app offrisse un solo modello, la GUI non deve
   accorgersene.
+- `SCARTATO` — **Provare il riaggancio chiudendo Claude Desktop a mano.** Provato
+  sul campo: chiudere la finestra non chiude l'app (Electron tiene vivo il
+  processo), e chiuderla davvero chiude anche chi sta eseguendo il collaudo,
+  perché è la stessa app. La strada è impraticabile per costruzione, non per
+  sfortuna. `detachtest.js` resta in repo: funzionerebbe su una macchina dove
+  chi collauda non sta dentro l'app, ma qui non è eseguibile.
+- `SETUP` — Scritto `alivecheck.ps1`: prova le tre verifiche di `IsAlive` su una
+  cavia che si può uccidere davvero (una finestra vuota creata apposta), invece
+  che su Claude. Le verifiche non hanno nulla di specifico su Claude, quindi il
+  rilevamento si può provare senza chiudere l'app che ci ospita. Esito: passato.
+- `BUG` `FIX` — **La terza verifica di `IsAlive` non verificava niente.**
+  `$root.Current.Name` continua a rispondere da una copia in memoria anche dopo
+  che il processo è morto: `alivecheck.ps1` la mostrava a `True` su un cadavere.
+  Sostituita con `GetCurrentPropertyValue(NameProperty)`, che va a chiedere
+  davvero e solleva eccezione quando non c'è più nessuno. Le prime due verifiche
+  reggevano già, quindi il broker si comportava bene: il difetto era una falsa
+  sicurezza, non un malfunzionamento.
+- `BUG` `FIX` — **Il riaggancio prendeva la finestra sbagliata.** L'app possiede
+  più finestre; `FindClaudeHwnd` restituiva la prima e il criterio di risveglio
+  era un conteggio di elementi (`> 40`). Una finestra secondaria con 49 elementi
+  e nessuna leva dentro passava il controllo, e da lì ogni comando falliva con
+  `readGear: elements not found`. Osservato dal vivo durante il collaudo.
+  Sostituito con `FindClaudeWindows`, che le elenca tutte, le prova dalla più
+  grande e **accetta solo quella in cui il pulsante del modello esiste** — la
+  cosa di cui ogni operazione ha effettivamente bisogno. Se nessuna ce l'ha
+  (schermata senza selettore) ripiega sulla più ricca e lo scrive nel log.
+- `SCOPERTA` — **Cavie di collaudo scartate su Windows 11.** Il Blocco note è
+  un'app dello Store: `Start-Process notepad` lancia un guscio che termina subito
+  e la finestra vera nasce da un altro processo. `cmd.exe` non possiede più la
+  propria finestra (la tiene il Terminale): `MainWindowHandle` resta 0 a processo
+  vivo. Serve una finestra WinForms creata da un secondo processo PowerShell.
 
 ## 2026-07-20 (sessione 5 — backend: UIA Broker costruito e mappa del cambio)
 

@@ -142,7 +142,8 @@ piano — l'UX va costruita su questa verità, non nasconderla.
 | Attuazione **senza rubare il focus** | 🟡 Letture focus-free ✅; gli switch alzano comunque l'app ⚠️ |
 | **UIA Broker (M1)** | ✅ [`backend/`](backend/) — demone NDJSON, 10 comandi + diagnostici |
 | Comando unico `capabilities` per la GUI | ✅ Provato sull'app viva (9,9 s per risposta completa) |
-| Riaggancio automatico se l'app si chiude/riapre | 🟡 Fatto; provato solo simulando la perdita — vedi §10 |
+| Riaggancio automatico se l'app si chiude/riapre | ✅ Rilevamento provato su morte reale (`alivecheck.ps1`), riaggancio 3/3 (`reattach.js`) |
+| Scelta della finestra giusta fra le più di Claude | ✅ Si aggancia solo dove il pulsante del modello esiste |
 | Spec di build | ✅ [SPEC.md](SPEC.md) (⚠️ §2 e §4.1 superati dalla sessione 5: vedi §3 qui) |
 | Prototipo UIA | ✅ [`prototype/`](prototype/) (`uia_shifter.ps1`, `uia_effort_slider.ps1`) |
 | GUI (frontend) | ⬜ In carico all'altro collaboratore |
@@ -157,21 +158,15 @@ secondo sono idee raccolte che nessuno ha ancora progettato.
 ### Prossima azione — backend
 
 I due pezzi mancanti (comando `capabilities`, riaggancio automatico) sono
-**scritti e funzionanti**. Resta una sola cosa da fare, ed è un collaudo, non
-del codice:
+**scritti, provati e chiusi**. Il backend non ha lavoro concordato in coda.
 
-1. **Provare il ramo "app davvero chiusa".** Il riaggancio è stato verificato
-   simulando la perdita con `forceDetach`, non chiudendo l'app: il broker si
-   aggancia al processo `Claude`, che è la stessa app dentro cui gira chi lo
-   pilota, quindi chiuderla chiude anche il collaudo. Il pezzo non coperto è il
-   *rilevamento* della morte del processo. Si prova con
-   `node backend/detachtest.js` **da un terminale esterno**, partendo con l'app
-   aperta e chiudendola/riaprendola a mano. Atteso: evento `detached`, errore in
-   chiaro (`Claude Desktop is not running - reopen it and retry`), nessun crash,
-   e — punto della decisione — **l'app non deve riaprirsi da sola**; poi evento
-   `reattached` con pid nuovo e letture di nuovo funzionanti.
-
-Finché quel collaudo non è fatto, la riga corrispondente in §9 resta gialla.
+Una cosa sola resta scoperta, e va detta invece che nascosta: **le due metà del
+riaggancio sono provate separatamente, non insieme.** Il rilevamento della morte
+è verificato su un processo ucciso per davvero (`alivecheck.ps1`), il riaggancio
+su una perdita simulata sull'app vera (`reattach.js`); la giuntura fra i due non
+è osservabile perché richiederebbe di chiudere l'app che ospita chi collauda.
+È il massimo ottenibile su questa macchina — chi in futuro pilotasse il broker
+da fuori Claude può chiudere il cerchio con `detachtest.js`.
 
 ### Idee raccolte — frontend / GUI
 
