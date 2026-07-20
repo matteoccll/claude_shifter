@@ -20,7 +20,104 @@ stanno in [PROJECT.md](PROJECT.md).
 
 ---
 
-## 2026-07-20
+## 2026-07-20 (sessione 3 — correzione bersaglio: app Claude Desktop, non terminale)
+
+- `DECISIONE` — **RIBALTATA la sessione 2.** Il bersaglio NON è Claude Code nel
+  terminale: è l'**app Claude Desktop** (MSIX Electron, quella bianca che si apre
+  dal logo). Tutto l'attuatore a console injection della sessione 2 era corretto
+  ma sul bersaglio sbagliato → archiviato. Motivo: richiesta esplicita e ripetuta
+  dell'utente.
+- `SCOPERTA` — L'app Claude Desktop è un pacchetto **MSIX**
+  (`Claude_1.22209.3.0_x64__pzs8sxrjxfjjc`, in `Program Files\WindowsApps\…`),
+  Electron/Chromium. Lancio: `shell:AppsFolder\Claude_pzs8sxrjxfjjc!Claude`.
+  Spawna `claude-code\<ver>\claude.exe --output-format stream-json`: è essa stessa
+  un controller di Claude Code (cowork/CCD).
+- `SCOPERTA` — **Attuatore corretto: Windows UI Automation (UIA) sull'app.**
+  Provato dal vivo end-to-end:
+  - l'albero a11y di Chromium è esposto solo con un **client UIA persistente**
+    attaccato (15 nodi a freddo → 130+ nomi con client attaccato);
+  - modello ed effort correnti sono `Button` leggibili (`'Sonnet 5'`,
+    `'Effort: High'`); telemetria in `Button 'Usage: context 6%, plan 32%'`;
+  - la **tendina sessioni** sono i `Button` `#N · <titolo>` della sidebar;
+  - **switch modello**: espandi il button → `Select` sul `RadioButton`
+    (`Haiku 4.5`/`Sonnet 5·Default`/`Opus 4.8`/`Fable 5`) → etichetta cambia.
+    Provato Sonnet→Opus→Sonnet (self-revert).
+  - **switch effort**: popup con **Slider** 0–5 (`Faster↔Smarter`),
+    `RangeValue.SetValue` → etichetta cambia. Provato High→Medium→High.
+- `SCOPERTA` — Modello/effort valgono sulla **conversazione attiva**: per agire su
+  una sessione bisogna prima selezionarla nella sidebar (che la porta in primo
+  piano nell'app). Vincolo UX da specificare.
+- `BUG` — **Aperto:** attuazione provata con finestra in **foreground**. Da
+  verificare se funziona **senza rubare il focus** (il vecchio bersaglio console
+  era focus-free; questo forse no).
+- `SETUP` — Riscritta [SPEC.md](SPEC.md) su base UIA/app Desktop (v2). Prototipo
+  `prototype/` aggiornato: rimossi gli script console, aggiunti `uia_shifter.ps1`
+  e `uia_effort_slider.ps1`. PROJECT.md allineato.
+- `SCOPERTA` — **Focus valutato: letture focus-free, switch no.** Tenendo il
+  foreground con un'altra finestra, la lettura di modello/effort/sessioni/usage
+  funziona con Claude in background; ma **aprire il menu (switch) porta la finestra
+  Claude in primo piano** (`foreground=CLAUDE` all'apertura del popup). Il
+  monitoraggio è ambientale/non invasivo, ogni cambio marcia invece alza l'app.
+  Inerente al pilotare il popup Electron. Downgrade reale rispetto al vecchio
+  bersaglio console (che era focus-free anche in scrittura).
+- `SCOPERTA` — **Ladder effort: meccanismo provato, mappa completa no.** Slider
+  0–5 via `RangeValue.SetValue` (1=Medium, 2=High confermati). I 6 label non
+  enumerati: il popup effort si apre in modo instabile via `ExpandCollapse`
+  (si auto-chiude / si incastra) e il fallback a click del mouse ha sbagliato le
+  coordinate per **mismatch DPI**. Artefatti del banco di prova, non blocchi:
+  la build deve aprire il popup con un metodo affidabile e usare coordinate
+  DPI-aware.
+
+---
+
+## 2026-07-20 (sessione 2 — pivot desktop + attuatore risolto)
+
+- `DECISIONE` — **Pivot: il prodotto è software desktop autonomo, non terminale
+  né web.** L'utente pilota solo la GUI (una leva sola + menu a tendina delle
+  sessioni), mai la tastiera del terminale. Riferimento concettuale: claudeine —
+  "un software che comunica con Claude ma è indipendente dalla sua interfaccia".
+- `DECISIONE` — **Una sola leva con tendina di selezione sessione**, scartata
+  l'ipotesi "una leva per sessione" perché diventa un caos di finestre.
+- `SCARTATO` — **Estensione web / browser.** Il target è il desktop.
+- `SCARTATO` — **Icona-stick iniettata dentro ogni chat.** Elegante (dissolve il
+  targeting) ma richiede injection nel renderer dell'app: fragile su Electron,
+  si rompe a ogni update. Tenuta come idea, non come strada.
+- `SCOPERTA` — **Nessun canale supportato cambia modello/effort a caldo.**
+  Verificato sui doc (vs-code, agent-sdk, model-config, settings): né IDE
+  websocket, né Agent SDK, né settings.json. L'unico meccanismo è il comando
+  `/model`/`/effort`. Quindi l'attuazione deve simularne la digitazione.
+- `SCOPERTA` — **`~/.claude/sessions/<pid>.json` è il registro vivo delle
+  sessioni interattive** (pid, sessionId, cwd, name, status busy/idle). È la
+  sorgente del menu a tendina: fra ~14 `claude.exe` isola correttamente le 2
+  interattive.
+- `SCOPERTA` — **Attuatore risolto e provato: `AttachConsole(pid)` +
+  `WriteConsoleInput`.** Consegna i tasti a una console **per PID, senza rubare
+  il focus**, anche dentro Windows Terminal (ConPTY) e su TUI in raw-mode, e
+  perfino in una **tab in background**. È l'equivalente Windows di
+  `tmux send-keys -t`. Chiude il BUG bloccante della sessione 1.
+- `SCOPERTA` — **Conferma via `AttachConsole(pid)` +
+  `ReadConsoleOutputCharacter`:** si rilegge lo schermo della sessione per PID
+  (focus-free) e si verifica dall'header che lo shift sia entrato. Diventa anche
+  la sorgente del "marcia corrente" per il cruscotto.
+- `SCOPERTA` — **Confermato dal vivo su una sessione reale:** `/effort low`
+  cambia l'header `high → low` istantaneamente; `/model sonnet` porta l'header
+  `Opus 4.8 → Sonnet 5` ma passa da una conferma **"Switch model?"**.
+- `SCOPERTA` — **Il warning sul costo di cache è nativo.** La conferma di
+  `/model` mostra già "This conversation is cached… full history gets re-read".
+  Il differenziatore di PROJECT §6 in parte esiste già: la GUI lo anticipa e
+  rilancia, non lo inventa.
+- `SCOPERTA` — **Reset dell'effort per famiglia confermato dal vivo:**
+  `settings.json` diceva `effortLevel: medium`, una sessione Sonnet 5 nuova
+  mostrava `high`. E `/model`/`/effort` **si salvano come default** in
+  `settings.json` (i test l'hanno mutato; ripristinato a `sonnet`/`medium`).
+- `SETUP` — Salvato il prototipo provato in [`prototype/`](prototype/)
+  (`inject.py`, `screen_read.py`). Scritta la spec di build [SPEC.md](SPEC.md).
+  Eliminati `model selection.md` e `window selection.md`: contenuto utile
+  assorbito da SPEC.md/PROJECT.md.
+
+---
+
+## 2026-07-20 (sessione 1 — analisi e verifiche iniziali)
 
 - `SETUP` — Repo collegato a GitHub (`matteoccll/claude_shifter`), clonato in
   `C:\Users\simon\Desktop\MODEL AND FURIOUS`, branch `main` da `fb34a0c`.

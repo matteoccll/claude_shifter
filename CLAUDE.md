@@ -5,6 +5,8 @@ cambia il modello che serve la sessione.
 
 Direzione, obiettivo e vincoli: **[PROJECT.md](PROJECT.md)** — leggilo prima di
 proporre architetture, contiene le strade già scartate con il motivo.
+Specifica di build pronta allo sviluppo: **[SPEC.md](SPEC.md)** (autorevole sul
+"cosa/come"; prototipo provato in [`prototype/`](prototype/)).
 Registro di cosa è successo: **[STORICO.md](STORICO.md)**.
 
 ## Regola obbligatoria — aggiornamento di fine sessione
