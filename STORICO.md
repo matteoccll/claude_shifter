@@ -20,6 +20,27 @@ stanno in [PROJECT.md](PROJECT.md).
 
 ---
 
+## 2026-07-21 (sessione 13 — backend su main + ricollaudo M1)
+
+- `DECISIONE` — **Backend spinto direttamente su `main`, saltando la PR.**
+  Ritenuto il backend pronto per far partire il frontend, l'utente ha chiesto —
+  con permesso esplicito e consapevole — di riversare i 21 commit del branch
+  `simone_fullstack_branch` su `main` con **push diretto**, invece della pull
+  request prevista da `CLAUDE.local.md`. Motivo dichiarato: sbloccare subito il
+  frontend senza attendere il giro della PR. Conseguenza messa a verbale: la
+  modifica arriva su `main` (condiviso col collega `matteoccll`) **senza la sua
+  revisione** — scelta dell'utente, non una svista. Push in fast-forward, nessun
+  `--force`; `origin/main` ora = `3a30f75`, 0 commit di scarto dal branch.
+- `SETUP` — **Ricollaudo M1 dal vivo (`test.js`)** sull'app Claude Desktop a
+  Opus 4.8 / Alto / cursore 2 (scala 0-5): `enumerate` (1 sessione), `setModel`
+  Opus 4.8 ↔ Sonnet 5, `setEffort` 2 ↔ 1 (Alto ↔ Medio), stato finale identico
+  alla partenza. **Esito: M1 PASSATO.** Mai selezionato Fable; ogni marcia
+  spostata rimessa a posto.
+- `SETUP` — **`selectSession` non esercitato in questa esecuzione**: la sidebar
+  aveva **una sola conversazione** aperta ("Backend readiness e push su main"),
+  quindi il giro andata/ritorno è stato saltato (serve una seconda sessione, come
+  in sessione 11). Il resto del cambio-marcia è stato verificato e ripristinato.
+
 ## 2026-07-21 (sessione 12 — backend: chiusi i due difetti aperti + collaudo dal vivo)
 
 - `FIX` — **`selectSession` non sporca più il canale NDJSON e conferma il

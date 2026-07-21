@@ -141,6 +141,7 @@ piano — l'UX va costruita su questa verità, non nasconderla.
 | **Ladder effort completo** | ✅ **Mappato dal vivo** — vedi §3.1, salvato in `backend/gearbox.json`. Rimisurato in sessione 8: identico, timestamp a parte. `map.js` non sovrascrive il file se la mappa è monca, e in quel caso esce 3 |
 | Attuazione **senza rubare il focus** | 🟡 Letture focus-free ✅; gli switch alzano comunque l'app ⚠️ |
 | **UIA Broker (M1)** | ✅ [`backend/`](backend/) — demone NDJSON, 10 comandi + diagnostici |
+| **Backend su `main`** | ✅ Sessione 13 — i 21 commit del backend riversati su `main` con push diretto (saltata la PR, scelta esplicita dell'utente); `origin/main` = branch. M1 riconfermato dal vivo (Opus 4.8: PASSATO) |
 | Comando unico `capabilities` per la GUI | ✅ Provato sull'app viva (5,8–13 s per risposta completa, a seconda del risveglio dell'albero) |
 | **Collaudo M1 end-to-end (`test.js`)** | ✅ Sessione 12 — non dichiara più "PASSATO" saltando l'effort: i tre casi (scala letta / assente / non letta) ora sono distinti con `hasControl`, e un verde senza effort si chiama "M1 PASSATO SENZA EFFORT". Rilanciato dal vivo (Opus 4.8: PASSATO; Haiku: SENZA EFFORT) |
 | **`selectSession` conferma il bersaglio** | ✅ Sessione 12 — risponde `{title}` invece di `null` (principio §7), e non riversa più la sua hashtable su stdout in mezzo all'NDJSON. Verificato sul broker grezzo: 0 righe non-JSON |
