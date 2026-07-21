@@ -1272,8 +1272,14 @@ while ($true) {
                 else { Reply-Ok $id $u }
             }
             'selectSession' {
-                Op-SelectSession ([string](ReqArg $req 'name'))
-                Reply-Ok $id $null
+                # Capture the result. An uncaptured Op-SelectSession leaks its
+                # @{ title = ... } hashtable to stdout, where PowerShell renders
+                # it as a formatted table -- non-JSON lines dropped in the middle
+                # of the NDJSON protocol (seen live). And replying $null broke
+                # principle 7: the target must be confirmed, not deduced. Now the
+                # client learns which session was actually selected.
+                $sel = Op-SelectSession ([string](ReqArg $req 'name'))
+                Reply-Ok $id $sel
             }
             'setModel' {
                 Reply-Ok $id @{ model = (Op-SetModel ([string](ReqArg $req 'model'))) }

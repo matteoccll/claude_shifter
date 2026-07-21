@@ -25,6 +25,7 @@ const REPORT = makeReport(path.join(__dirname, 'test-report.txt'));
 const say    = (...a) => REPORT.log(...a);
 
 let failures = 0;
+let effortTested = false;   // false finche' setEffort non e' stato davvero esercitato
 const check = (label, ok, detail) => {
   say(`${ok ? 'OK ' : 'FAIL'}  ${label}${detail ? `  (${detail})` : ''}`);
   if (!ok) failures++;
@@ -50,7 +51,7 @@ const check = (label, ok, detail) => {
   const start = await b.send('readGear');
   say(`[2] partenza: ${start.model} / ${start.hasEffort ? start.effort : '(no effort)'}`);
 
-  const startRange = start.hasEffort ? await b.send('effortRange') : { available: false };
+  const startRange = start.hasEffort ? await b.send('effortRange') : { available: false, hasControl: false };
   const startLevel = startRange.available ? startRange.current : null;
   say(`    cursore: ${startLevel === null ? '(nessuno)' : `${startLevel} (scala ${startRange.min}-${startRange.max})`}`);
 
@@ -87,7 +88,13 @@ const check = (label, ok, detail) => {
     const m2 = await b.send('setModel', { model: start.model });
     check(`il pulsante ora legge ${start.model}`, m2.model === start.model, m2.model);
 
-    // 5. setEffort andata e ritorno (solo se il modello ha lo splitter)
+    // 5. setEffort andata e ritorno. Tre casi, tenuti distinti da `hasControl`
+    // (come in map.js), perche' "startLevel null" da solo li confonde:
+    //   - scala letta            -> si collauda setEffort;
+    //   - nessun controllo (Haiku, hasControl:false) -> salto legittimo, ma il
+    //     collaudo NON prova setEffort -> lo dice il verdetto finale;
+    //   - controllo presente ma scala non letta (hasControl:true) -> e' un
+    //     GUASTO, non un salto: senza questo ramo il test taceva e diceva PASSATO.
     if (startLevel !== null) {
       say('');
       const tmp = startLevel === startRange.min ? startLevel + 1 : startLevel - 1;
@@ -98,8 +105,12 @@ const check = (label, ok, detail) => {
       say(`[5b] setEffort ritorno -> ${startLevel}`);
       const e2 = await b.send('setEffort', { level: startLevel });
       check(`l'etichetta e' tornata "${start.effort}"`, e2.effort === start.effort, e2.effort);
+      effortTested = true;
+    } else if (startRange.hasControl) {
+      check('scala effort leggibile su un modello che ha lo splitter', false,
+        startRange.reason || 'effortRange non disponibile');
     } else {
-      say('[5] setEffort saltato: il modello di partenza non ha lo splitter');
+      say('[5] setEffort NON collaudato: il modello di partenza (es. Haiku) non ha lo splitter');
     }
   } finally {
     // 6. verifica finale indipendente dai passi sopra
@@ -113,7 +124,17 @@ const check = (label, ok, detail) => {
   }
 
   say('');
-  say(failures === 0 ? 'ESITO: M1 PASSATO' : `ESITO: ${failures} VERIFICHE FALLITE`);
+  if (failures > 0) {
+    say(`ESITO: ${failures} VERIFICHE FALLITE`);
+  } else if (effortTested) {
+    say('ESITO: M1 PASSATO');
+  } else {
+    // Verde onesto: nessuna verifica fallita, ma setEffort non e' stato provato
+    // (modello di partenza senza splitter). Un PASSATO liscio qui direbbe il
+    // falso -- non prova che setEffort funzioni. Ripetere con un modello che ha
+    // le marce (vedi intestazione) per collaudarlo.
+    say('ESITO: M1 PASSATO SENZA EFFORT (setEffort non collaudato: modello di partenza senza splitter)');
+  }
   REPORT.flush();
   process.exit(failures === 0 ? 0 : 1);
 })().catch(err => {
