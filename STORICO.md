@@ -20,6 +20,45 @@ stanno in [PROJECT.md](PROJECT.md).
 
 ---
 
+## 2026-07-21 (sessione 12 — backend: chiusi i due difetti aperti + collaudo dal vivo)
+
+- `FIX` — **`selectSession` non sporca più il canale NDJSON e conferma il
+  bersaglio.** Il dispatch chiamava `Op-SelectSession` senza catturarne il
+  risultato: in PowerShell un valore non catturato finisce sulla pipeline, così
+  la hashtable `@{title=...}` usciva su stdout come tabella in mezzo al
+  protocollo, e la risposta al client era `null` — contro il principio §7 di
+  PROJECT (il bersaglio si conferma, non si deduce). Chiuso catturando il
+  risultato in `$sel` e rispondendo con quello. Verificato alla radice parlando
+  col broker grezzo (senza il client, che scarta le righe non-JSON e avrebbe
+  nascosto il leak): stdout = solo NDJSON, 0 righe non-JSON, risposta
+  `{title:"..."}`.
+- `FIX` — **`test.js` non dichiara più "M1 PASSATO" saltando l'effort.** Lo skip
+  guardava solo `startLevel === null`, che confondeva "modello senza splitter"
+  (Haiku, skip legittimo) con "scala non letta" (guasto) — la stessa confusione
+  già chiusa in `map.js` con `hasControl`. Ora i tre casi sono distinti: scala
+  letta → collauda `setEffort` e segna `effortTested`; controllo assente → skip
+  onesto e verdetto "M1 PASSATO SENZA EFFORT"; controllo presente ma scala non
+  letta → FAIL, non skip. Un collaudo verde non implica più che `setEffort`
+  funzioni.
+- `SETUP` — **Collaudato tutto il backend dal vivo, due giri**, sull'app a
+  Opus 4.8 / Alto / cursore 2. Passati `state`, `probe`, `capabilities` (6 marce,
+  7 modelli, `errors` vuoto, cruscotto ~10%/41%), `fastmode` (read), `reattach`
+  3/3, e `test.js` M1 completo: enumerate (2 sessioni), `selectSession`
+  andata/ritorno con marcia coincidente al rientro, `setModel` Opus↔Sonnet,
+  `setEffort` 2↔1, stato ripristinato. Il ramo discriminante del bug 2 provato
+  innestando Haiku 4.5 (verdetto "M1 PASSATO SENZA EFFORT") e ripristinando
+  Opus 4.8. **Mai selezionato Fable; ogni marcia spostata rimessa a posto.**
+  Stato finale identico a quello di partenza.
+- `SCOPERTA` — **La sidebar ha mostrato 2 conversazioni**, quindi per la prima
+  volta il giro completo di `selectSession` dentro `test.js` è stato eseguito
+  davvero (in sessione 11 se ne vedeva una sola e veniva saltato). Nessuna
+  collisione fra "Untitled session" e "Untitled session (fork)": `Op-SelectSession`
+  fa match per uguaglianza esatta (`-eq`).
+- `SETUP` — **Non rilanciati di proposito**: `map.js` (seleziona ogni modello
+  incluso Fable per misurare le scale — vietato nei collaudi, e la `gearbox.json`
+  è già validata identica), `detachtest.js` (richiede l'app davvero chiusa da un
+  terminale esterno, non fattibile girando dentro l'app stessa).
+
 ## 2026-07-21 (sessione 11 — backend: collaudo per il via libera al frontend)
 
 - `SETUP` — Collaudato tutto il backend sull'app viva per rispondere a una

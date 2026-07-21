@@ -142,7 +142,8 @@ piano — l'UX va costruita su questa verità, non nasconderla.
 | Attuazione **senza rubare il focus** | 🟡 Letture focus-free ✅; gli switch alzano comunque l'app ⚠️ |
 | **UIA Broker (M1)** | ✅ [`backend/`](backend/) — demone NDJSON, 10 comandi + diagnostici |
 | Comando unico `capabilities` per la GUI | ✅ Provato sull'app viva (5,8–13 s per risposta completa, a seconda del risveglio dell'albero) |
-| **Collaudo M1 end-to-end (`test.js`)** | 🟡 Passa sull'app viva, ma in sessione 11 ha dichiarato "PASSATO" **saltando il test dell'effort** (vedi §10): un verde non prova ancora che `setEffort` funzioni |
+| **Collaudo M1 end-to-end (`test.js`)** | ✅ Sessione 12 — non dichiara più "PASSATO" saltando l'effort: i tre casi (scala letta / assente / non letta) ora sono distinti con `hasControl`, e un verde senza effort si chiama "M1 PASSATO SENZA EFFORT". Rilanciato dal vivo (Opus 4.8: PASSATO; Haiku: SENZA EFFORT) |
+| **`selectSession` conferma il bersaglio** | ✅ Sessione 12 — risponde `{title}` invece di `null` (principio §7), e non riversa più la sua hashtable su stdout in mezzo all'NDJSON. Verificato sul broker grezzo: 0 righe non-JSON |
 | **Guasti che si distinguono dagli stati normali** | ✅ Sessione 11 — `capabilities` non può più dire "0 marce" in silenzio: una lettura mancata finisce in `errors`, e `hasControl` distingue "modello senza scala" da "scala non letta" |
 | **Nessuna richiesta resta appesa** | ✅ Sessione 11 — scadenza per singola richiesta, rifiuto immediato se il broker è morto, e la sua morte non si porta più dietro il processo chiamante |
 | Riaggancio automatico se l'app si chiude/riapre | ✅ Rilevamento provato su morte reale (`alivecheck.ps1`), riaggancio 3/3 (`reattach.js`) |
@@ -184,16 +185,22 @@ la lista errori vuota; e **una richiesta spedita a un broker morto non tornava
 mai**, perché non falliva niente, passava solo del tempo. Ora la prima finisce in
 `errors` e la seconda ha una scadenza.
 
-**Due difetti restano aperti**, entrambi piccoli e entrambi sul lato sessione:
+La sessione 12 ha chiuso i **due difetti che restavano aperti**, entrambi sul
+lato sessione, e li ha collaudati dal vivo:
 
-1. `selectSession` risponde `null` — non dice su cosa ha agito — e il valore che
-   il dispatch non raccoglie finisce su stdout come testo, in mezzo al protocollo
-   NDJSON. Innocuo oggi (il client scarta le righe non-JSON), ma è il principio
-   §7 che resta scoperto: il bersaglio si conferma, non si deduce.
-2. `test.js` dichiara "M1 PASSATO" anche quando salta il test dell'effort, per la
-   stessa confusione fra "modello senza scala" e "scala non letta" già chiusa in
-   `map.js` con `hasControl`. Finché resta così, un collaudo verde non prova che
-   `setEffort` funzioni.
+1. `selectSession` rispondeva `null` e riversava la sua hashtable su stdout in
+   mezzo all'NDJSON, perché il dispatch la chiamava senza catturarne il risultato.
+   Chiuso: cattura il risultato e risponde `{title}`, così il bersaglio si
+   conferma (§7). Verificato sul broker grezzo — stdout è solo protocollo, 0
+   righe non-JSON.
+2. `test.js` dichiarava "M1 PASSATO" anche saltando l'effort, per la stessa
+   confusione fra "modello senza scala" e "scala non letta" già chiusa in `map.js`
+   con `hasControl`. Chiuso: i tre casi sono ora distinti, e un verde senza effort
+   si chiama "M1 PASSATO SENZA EFFORT". Provato su Opus 4.8 (PASSATO, effort
+   collaudato) e su Haiku 4.5 (SENZA EFFORT, skip onesto).
+
+**Nessun difetto backend/sessione resta aperto** — via del tutto libera al
+frontend.
 
 ### Cosa può fare il frontend, adesso
 
@@ -215,9 +222,12 @@ Tre vincoli da progettare, non da aggirare:
 - **`gears: 0` da solo non vuol dire "niente marce":** guardare
   `effortRange.hasControl`, oppure `errors`.
 
-La tendina va dopo, quando `selectSession` saprà dire cosa ha fatto: oggi
-`enumerate` legge solo le conversazioni che la sidebar sta disegnando in quel
-momento — in sessione 11 ne ha vista **una**.
+La tendina è più vicina: da sessione 12 `selectSession` **dice cosa ha fatto**
+(risponde `{title}`), e `enumerate` ha visto **due** conversazioni, quindi il
+giro completo andata/ritorno è stato eseguito davvero (in sessione 11 se ne
+vedeva una sola). Resta però il vincolo che `enumerate` legge solo le righe che
+la sidebar sta disegnando in quel momento, e la verifica *forte* del bersaglio è
+ancora da progettare (vedi i due rischi rimandati qui sotto).
 
 Una cosa resta scoperta, e va detta invece che nascosta: **le due metà del
 riaggancio sono provate separatamente, non insieme.** Il rilevamento della morte
