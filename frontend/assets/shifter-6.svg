@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 800" width="600" height="800">
+  <!-- PLACEHOLDER — sostituire con la foto vera della leva a 6 marce.
+       Vedi README.md. Il pomello è al centro: ancora ~ (50%, 50%). -->
+  <defs>
+    <radialGradient id="leather6" cx="50%" cy="30%" r="90%">
+      <stop offset="0%" stop-color="#8a5528"/>
+      <stop offset="70%" stop-color="#5a3418"/>
+      <stop offset="100%" stop-color="#2e1c0c"/>
+    </radialGradient>
+    <radialGradient id="metal6" cx="40%" cy="30%" r="80%">
+      <stop offset="0%" stop-color="#e7eaee"/>
+      <stop offset="60%" stop-color="#b9bfc6"/>
+      <stop offset="100%" stop-color="#8a9199"/>
+    </radialGradient>
+  </defs>
+  <rect width="600" height="800" fill="url(#leather6)"/>
+  <circle cx="300" cy="400" r="230" fill="url(#metal6)" stroke="#7d848c" stroke-width="6"/>
+  <!-- gate a 3 asole (6 posizioni) -->
+  <g fill="#241a10">
+    <rect x="210" y="240" width="34" height="320" rx="17"/>
+    <rect x="283" y="240" width="34" height="320" rx="17"/>
+    <rect x="356" y="240" width="34" height="320" rx="17"/>
+  </g>
+  <!-- etichette rosse incise (come le foto) -->
+  <g fill="#b0201a" font-family="Georgia, serif" font-weight="700" font-size="30">
+    <text x="300" y="215" text-anchor="middle">HIGH</text>
+    <text x="150" y="360" text-anchor="middle">LOW</text>
+    <text x="450" y="360" text-anchor="middle">MAX</text>
+    <text x="140" y="470" text-anchor="middle">MEDIUM</text>
+    <text x="470" y="470" text-anchor="middle">ULTRACODE</text>
+    <text x="300" y="600" text-anchor="middle">EXTRA</text>
+  </g>
+  <!-- pomello (superficie pulita: il nome modello lo scrive il codice) -->
+  <circle cx="300" cy="400" r="70" fill="#6b4423" stroke="#3a2410" stroke-width="4"/>
+  <text x="300" y="770" text-anchor="middle" fill="#f3e7d4" opacity="0.5"
+        font-family="sans-serif" font-size="20">placeholder — leva 6 marce</text>
+</svg>

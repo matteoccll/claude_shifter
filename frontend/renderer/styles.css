@@ -1,0 +1,195 @@
+/* MODEL AND FURIOUS — frontend (bozza). Vedi DECISIONI-FRONTEND.md.
+   Estetica cruscotto: pelle cuoio + metallo, testo rosso inciso come le foto. */
+
+:root {
+  --leather: #7a4a22;
+  --leather-dark: #3a2410;
+  --metal: #c9cdd2;
+  --engrave: #b0201a;
+  --engrave-glow: rgba(176, 32, 26, 0.55);
+  --ink: #f3e7d4;
+  --ok: #4fae5a;
+  --warn: #d8a12b;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background:
+    radial-gradient(120% 90% at 50% 0%, #5a3418 0%, var(--leather-dark) 70%, #1a1206 100%);
+  color: var(--ink);
+  font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+  user-select: none;
+}
+
+.dashboard {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 16px 16px 32px;
+}
+
+.topbar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.brand {
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: var(--engrave);
+  text-shadow: 0 0 10px var(--engrave-glow);
+}
+.brand .amp { color: var(--ink); }
+.hint { font-size: 12px; opacity: 0.7; }
+
+/* ---- STAGE: la foto + gli strati disegnati sopra ---- */
+.stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #241608;
+  box-shadow: inset 0 0 60px rgba(0,0,0,0.6);
+}
+.stage-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* nome del modello scritto SOPRA il pomello (posizione = ancora della foto) */
+.knob-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  padding: 4px 10px;
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.5px;
+  color: var(--engrave);
+  text-shadow: 0 1px 0 rgba(0,0,0,0.6), 0 0 10px var(--engrave-glow);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* la ruota dei modelli: appare al clic destro */
+.model-wheel {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(closest-side, rgba(10,6,2,0.72), rgba(10,6,2,0.4));
+  backdrop-filter: blur(1px);
+  z-index: 5;
+}
+.wheel-ring {
+  position: relative;
+  width: 78%;
+  aspect-ratio: 1 / 1;
+}
+.wheel-item {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(201,205,210,0.35);
+  background: rgba(20,12,4,0.85);
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform .08s ease, border-color .15s ease, background .15s ease;
+}
+.wheel-item:hover { border-color: var(--metal); background: rgba(40,24,8,0.95); }
+.wheel-item.current {
+  border-color: var(--engrave);
+  color: var(--engrave);
+  box-shadow: 0 0 12px var(--engrave-glow);
+}
+.wheel-center {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%,-50%);
+  text-align: center;
+  font-size: 11px;
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+/* stato "sto innestando" / "riprovo" */
+.shift-status {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  z-index: 6;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: rgba(10,6,2,0.9);
+  border: 1px solid rgba(201,205,210,0.3);
+  font-size: 12.5px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.shift-status.retry { border-color: var(--warn); color: var(--warn); }
+.spinner {
+  width: 12px; height: 12px;
+  border: 2px solid rgba(255,255,255,0.25);
+  border-top-color: var(--ink);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---- ladder effort (disegnato da capabilities) ---- */
+.ladder { margin-top: 16px; }
+.ladder-title { font-size: 12px; opacity: 0.7; margin-bottom: 8px; }
+.ladder-dots { display: flex; gap: 8px; flex-wrap: wrap; }
+.dot {
+  flex: 1 1 0;
+  min-width: 56px;
+  text-align: center;
+  padding: 8px 4px;
+  border-radius: 8px;
+  border: 1px solid rgba(201,205,210,0.25);
+  background: rgba(20,12,4,0.6);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .12s ease;
+}
+.dot:hover { border-color: var(--metal); }
+.dot.active {
+  border-color: var(--engrave);
+  color: var(--engrave);
+  box-shadow: inset 0 0 12px var(--engrave-glow);
+}
+.ladder-note { font-size: 11.5px; opacity: 0.65; margin-top: 8px; min-height: 1.2em; }
+.ladder.disabled { opacity: 0.5; }
+
+/* ---- cruscotto ---- */
+.cruscotto {
+  margin-top: 18px;
+  display: flex;
+  gap: 12px;
+}
+.gauge {
+  flex: 1;
+  text-align: center;
+  padding: 12px 8px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(201,205,210,0.12), rgba(0,0,0,0.25));
+  border: 1px solid rgba(201,205,210,0.18);
+}
+.gauge-num { font-size: 22px; font-weight: 800; color: var(--metal); }
+.gauge-lab { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; opacity: 0.6; }

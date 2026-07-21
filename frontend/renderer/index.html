@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MODEL AND FURIOUS</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="dashboard">
+    <header class="topbar">
+      <span class="brand">MODEL <span class="amp">&amp;</span> FURIOUS</span>
+      <span class="hint">clic destro sul pomello → scegli il modello</span>
+    </header>
+
+    <!-- STRATO FOTO + STRATI DISEGNATI SOPRA (decisione 7) -->
+    <section class="stage" id="stage" aria-label="Leva del cambio">
+      <!-- sfondo: la foto della leva, scambiata per numero di marce (decisione 1) -->
+      <img class="stage-photo" id="stagePhoto" alt="Leva del cambio" />
+
+      <!-- nome del modello attivo, scritto SOPRA il pomello (decisione 4) -->
+      <div class="knob-label" id="knobLabel" hidden></div>
+
+      <!-- ruota dei modelli: nascosta finché non fai clic destro (decisioni 4-5) -->
+      <div class="model-wheel" id="modelWheel" hidden></div>
+
+      <!-- stato "sto innestando" / "riprovo" (decisioni 3, 8) -->
+      <div class="shift-status" id="shiftStatus" hidden></div>
+    </section>
+
+    <!-- ladder effort disegnato DA capabilities, non hardcoded (decisione 2) -->
+    <section class="ladder" id="ladder" aria-label="Effort">
+      <div class="ladder-title">Splitter (effort)</div>
+      <div class="ladder-dots" id="ladderDots"></div>
+      <div class="ladder-note" id="ladderNote"></div>
+    </section>
+
+    <!-- cruscotto: context % / plan % da readUsage -->
+    <section class="cruscotto">
+      <div class="gauge">
+        <div class="gauge-num" id="ctxNum">--</div>
+        <div class="gauge-lab">context</div>
+      </div>
+      <div class="gauge">
+        <div class="gauge-num" id="planNum">--</div>
+        <div class="gauge-lab">plan</div>
+      </div>
+      <div class="gauge">
+        <div class="gauge-num" id="modelNum">--</div>
+        <div class="gauge-lab">modello</div>
+      </div>
+    </section>
+  </main>
+
+  <script src="mockBroker.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

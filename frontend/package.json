@@ -1,0 +1,14 @@
+{
+  "name": "model-and-furious-frontend",
+  "version": "0.0.1",
+  "private": true,
+  "description": "GUI cambio-marce per Claude Desktop — bozza fullstack (Simone). Vedi DECISIONI-FRONTEND.md.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "web": "echo Apri renderer/index.html in un browser, oppure servi la cartella con un server statico."
+  },
+  "devDependencies": {
+    "electron": "^31.0.0"
+  }
+}
