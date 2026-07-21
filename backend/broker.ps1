@@ -847,8 +847,15 @@ function OpenSubmenu {
 # renders its markdown bullets as ListItem -- and those precede the menu in
 # document order, so a ListItem-tolerant finder picks up chat text as if it
 # were a menu entry.
+# Returns @{ opened; failed }, not a bare count: a submenu marker that was
+# found but never actually expanded (sess. 8: "4 -> 0", the whole popup
+# sometimes disappears instead of the submenu opening, cause unknown, not
+# reproducible on demand) is a different situation from no marker existing at
+# all. Callers need to tell "nothing to open" from "something failed to open"
+# so they know whether retrying from a fresh popup is worth doing.
 function ExpandModelSubmenus {
     $opened = 0
+    $failed = 0
     $seen   = New-Object System.Collections.Generic.List[string]
     for ($pass = 0; $pass -lt 4; $pass++) {
         $cand = @(Walk | Where-Object {
@@ -859,14 +866,25 @@ function ExpandModelSubmenus {
         $r = $cand[0]
         $seen.Add($r.Nm)
         Log "trying submenu '$($r.Nm)'"
-        if (OpenSubmenu $r) { $opened++ }
+        if (OpenSubmenu $r) { $opened++ } else { $failed++ }
     }
-    return $opened
+    return @{ opened = $opened; failed = $failed }
 }
 
+# A submenu that fails to expand does not make ModelOptionRows empty -- the
+# top-level 4 are still there -- so the old single-pass version returned a
+# plausible-looking but short list (4 instead of 7) with no error anywhere,
+# the same trap already closed for effort ("gears: 0, errors empty"). Retry
+# once from a fresh popup when a submenu marker was seen but did not expand;
+# report what actually came back either way rather than pretending success.
 function Op-ListModels {
-    if (-not (OpenModelPopup)) { ClosePopups; throw "Model menu did not open" }
-    $null = ExpandModelSubmenus
+    $expand = $null
+    for ($try = 0; $try -lt 2; $try++) {
+        if (-not (OpenModelPopup)) { ClosePopups; throw "Model menu did not open" }
+        $expand = ExpandModelSubmenus
+        if ($expand.failed -eq 0) { break }
+        Log "listModels: submenu failed to expand on try $try, retrying from a fresh popup"
+    }
 
     $result = @(ModelOptionRows | ForEach-Object {
         @{ name = $_.Nm; label = (BareModel $_.Nm); enabled = (IsOn $_.El); selected = (IsSel $_.El) }
@@ -959,7 +977,7 @@ function Op-ModelPopupTree {
     })
 
     ClosePopups
-    @{ submenusOpened = $n; count = $rows.Count; text = ($rows -join "`n") }
+    @{ submenusOpened = $n.opened; submenusFailed = $n.failed; count = $rows.Count; text = ($rows -join "`n") }
 }
 
 # Read the effort range without touching it. Cheap and non-destructive: this is
@@ -1155,14 +1173,30 @@ function Op-SetModel {
     # that does not know which gear it wants, and guessing one is the worst
     # possible answer -- see FindModelOption.
     if ([string]::IsNullOrWhiteSpace($alias)) { throw "setModel: no model name given" }
-    if (-not (OpenModelPopup)) { ClosePopups; throw "Model menu did not open" }
 
-    $target = FindModelOption $alias
-    if (-not $target) {
-        # not on the top level, so it must be behind the "other models" submenu
-        $null = ExpandModelSubmenus
+    # The "Altri modelli" submenu occasionally does not expand and instead
+    # takes the whole popup down with it (sess. 8: "4 -> 0", cause unknown,
+    # not reproducible on demand). A single-pass setModel could not tell that
+    # apart from the model genuinely not existing, and said so -- "Model
+    # option not found" for a model that was real. Retry the whole
+    # open-popup-then-expand sequence once from scratch before believing that,
+    # same shape as OpenEffortPopup's retry for the same family of popup
+    # flakiness.
+    $target = $null
+    $opened = $false
+    for ($try = 0; $try -lt 2 -and -not $target; $try++) {
+        if (-not (OpenModelPopup)) { ClosePopups; continue }
+        $opened = $true
+
         $target = FindModelOption $alias
+        if (-not $target) {
+            # not on the top level, so it must be behind the "other models" submenu
+            $null = ExpandModelSubmenus
+            $target = FindModelOption $alias
+        }
+        if (-not $target) { Log "setModel: '$alias' not found on try $try, retrying from a fresh popup" }
     }
+    if (-not $opened) { ClosePopups; throw "Model menu did not open" }
     if (-not $target) {
         $seen = (@(ModelOptions) | ForEach-Object { BareModel (Nm $_) }) -join ', '
         ClosePopups
