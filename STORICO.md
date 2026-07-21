@@ -19,6 +19,42 @@ decisioni. Niente piani, niente intenzioni — quelli stanno in
 
 ---
 
+## 2026-07-21 (sessione 16 — backend: la lentezza, dai popup all'impennata)
+
+- `FIX` — **Attese fisse dei popup sostituite da poll a budget invariato.**
+  `OpenSubmenu` (900 ms fissi dopo l'hover, chiamati a ogni `capabilities`),
+  `OpenModelPopup` (8×400 ms) e `OpenEffortPopup` (8×500 ms) dormivano il tempo
+  del caso peggiore anche quando il popup era pronto in un attimo. Introdotto
+  helper `PollFor`: controlla subito, poi dorme a passi crescenti fino allo
+  stesso budget totale. Caso lento invariato (tetto uguale), caso normale torna
+  appena l'elemento c'è. Effetto: `capabilities` da **~3,6 s → ~2,2 s** in
+  condizioni buone, **~1,9 s** a stato assestato.
+- `FIX` — **`OpenEffortPopup`: 2 tentativi lenti diventano 3 rapidi.** Misurato
+  dal vivo su 17 chiamate: quando il popup si apre, si apre in ~800 ms al try
+  0; il vecchio budget da ~4 s per tentativo serviva solo ad aspettare un
+  popup bloccato, e ad sbloccarlo non era l'attesa ma il *close+reopen* del
+  tentativo successivo. Passato a 3 tentativi da ~1,3 s ciascuno: tetto
+  ~8 s → ~4 s, una possibilità di recupero in più, caso normale invariato.
+- `FIX` — **Cronometro per sezione in `capabilities`.** Log `readGear /
+  listModels / effortRange / total` in ms su stderr. La "causa non chiarita"
+  dell'impennata (sess. 14) diventa misurabile a costo zero: la prossima volta
+  che scatta si vede quale sezione l'ha mangiata invece di stringersi nelle
+  spalle.
+- `SETUP` — Collaudato dal vivo con 5 cambi modello reali (Sonnet 5, Opus 4.7,
+  Opus 4.6 fallito legittimamente, Sonnet 4.6, Opus 4.8) + 14 `capabilities`
+  consecutive, alcune il ferro caldo subito dopo `setModel`. **Il picco a
+  ~10 s non si è riprodotto** — coerente con sess. 14 ("sporadico, non
+  riproducibile a comando"). Ma è scattato **casualmente** il bug del submenu
+  sess. 8 (`4 -> 0`) quando l'utente ha toccato il mouse: il retry di
+  `listModels` + il nuovo popup effort veloce hanno fatto chiudere
+  `capabilities` in **3,89 s** invece dei 10 s temuti — **prova sul caso
+  patologico reale** che il tetto è dimezzato, non una previsione. Mai Fable,
+  stato finale Opus 4.8/Alto/level 2.
+- `SCOPERTA` — **Il picco resta a causa ignota**, ma non serve più
+  spiegarlo: il tetto è sceso da ~10 s a ~4 s per costruzione. Il bug del
+  submenu sess. 8 (`4 -> 0`) è stato osservato dal vivo per la prima volta
+  senza cercarlo — resta non riproducibile a comando, causa sempre ignota.
+
 ## 2026-07-21 (sessione 15 — backend: il submenu che sparisce si autocorregge)
 
 - `FIX` — **`setModel` e `listModels` ritentano da un popup fresco se il

@@ -138,7 +138,8 @@ costruita su questa verità, non nascosta.
 | Attuazione senza rubare il focus | 🟡 Letture focus-free ✅; switch alzano l'app ⚠️ |
 | **UIA Broker (M1)** | ✅ [`backend/`](backend/) — demone NDJSON, 10 comandi + diagnostici |
 | **Backend su `main`** | ✅ Sess. 13 — 21 commit riversati con push diretto (PR saltata, scelta esplicita utente). M1 riconfermato (Opus 4.8: PASSATO) |
-| Comando `capabilities` | ✅ **~3,6 s stabile** dopo i fix sess. 14 (era 6–15 s variabile) |
+| Comando `capabilities` | ✅ **~1,9–2,2 s** dopo i fix sess. 16 (era ~3,6 s sess. 14, 6–15 s prima). Cronometro per sezione su stderr |
+| Impennata sporadica a ~10 s | ✅ Tetto sceso a **~4 s** (sess. 16): `OpenEffortPopup` fail-fast, provato dal vivo sul caso patologico del submenu (`4 -> 0`) — `capabilities` in 3,89 s. Causa originaria del picco resta ignota, non serve più spiegarla |
 | **Collaudo M1 (`test.js`)** | ✅ Sess. 12 — distingue scala letta/assente/non letta (`hasControl`); verde senza effort si chiama "PASSATO SENZA EFFORT" |
 | **`selectSession` conferma il bersaglio** | ✅ Sess. 12 — risponde `{title}`, non sporca più stdout |
 | **Guasti distinti dagli stati normali** | ✅ Sess. 11 — lettura mancata finisce in `errors`, `hasControl` distingue i due casi |
@@ -167,11 +168,11 @@ marce / Haiku senza splitter), ed espone gli eventi
 
 Vincoli da progettare, non da aggirare:
 
-- **Lentezza**: `capabilities` ~3,6 s, `setModel` ~1,6 s, cambio marcia
-  completo ~5 s nel caso normale (era 9–20 s, sess. 14). Impennata sporadica a
-  ~10 s dopo cambio modello. Serve uno stato "sto innestando" onesto; la
-  scadenza per richiesta non annulla il lavoro del broker, smette solo di
-  aspettarlo.
+- **Lentezza**: `capabilities` ~1,9–2,2 s (sess. 16, era ~3,6 s), `setModel`
+  ~1,6 s, cambio marcia completo ~4 s nel caso normale. Tetto dell'impennata
+  sceso da ~10 s a ~4 s (sess. 16); scattare comunque può, in ~4 s. Serve uno
+  stato "sto innestando" onesto; la scadenza per richiesta non annulla il
+  lavoro del broker, smette solo di aspettarlo.
 - **Un `setModel` fallito non prova più (di regola) che il modello non
   esista** (bug submenu, sotto): sess. 15 ha aggiunto un ritentativo
   automatico da un popup fresco. La GUI può ancora trovarsi davanti un
