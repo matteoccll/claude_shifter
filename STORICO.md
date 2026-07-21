@@ -5,606 +5,516 @@
 > senza conferma, ma **non chiudere la sessione senza aver chiesto.**
 
 Registro cronologico delle sessioni. **Solo date e azioni eseguite**: bug, fix,
-decisioni. Niente piani, niente intenzioni, niente "prossimi passi" — quelli
-stanno in [PROJECT.md](PROJECT.md).
+decisioni. Niente piani, niente intenzioni — quelli stanno in
+[PROJECT.md](PROJECT.md).
 
 ## Regole di scrittura
 
 - Voce nuova **in cima**, formato data `AAAA-MM-GG`.
 - Ogni riga è **una cosa che è successa**, al passato.
 - Tag ammessi: `DECISIONE` · `FIX` · `BUG` · `SETUP` · `SCOPERTA` · `SCARTATO`
-- Le decisioni riportano il **motivo**, non solo l'esito. Fra sei mesi il "cosa"
-  si ricostruisce dal codice, il "perché" no.
+- Le decisioni riportano il **motivo**, non solo l'esito.
 - Non riscrivere le voci passate. Se una decisione viene ribaltata, si aggiunge
-  una voce nuova che la ribalta — lo storico resta un registro, non un riassunto.
+  una voce nuova che la ribalta.
 
 ---
+
+## 2026-07-21 (sessione 14 — backend: la lentezza, due fix misurati dal vivo)
+
+- `FIX` — **La scansione UIA pagava una chiamata cross-process per elemento.**
+  `Walk` camminava l'albero a mano (`GetFirstChild`/`GetNextSibling`, `Name`/
+  `ControlType` uno alla volta): su ~1000 elementi, migliaia di round-trip,
+  ~1 s a scansione, e `capabilities` ne fa una dozzina. Sostituito con
+  `CacheRequest` + `GetUpdatedCache`: un solo round-trip tira giù il
+  sottoalbero, la DFS legge tutto in locale da `.CachedChildren`/`.Cached.*`.
+  Stesso ordine di documento, modalità `Full` (handle restano azionabili).
+  Effetto: `capabilities` da **6–15 s variabili a ~4,6 s stabile**.
+- `FIX` — **Apertura submenu "Altri modelli": hover prima di
+  `ExpandCollapse`.** Su questa app `ExpandCollapse` non apre **mai** il
+  submenu (torna successo senza effetto, `4 -> 4`, 900 ms buttati); solo
+  l'hover porta a casa i 3 modelli nascosti. Invertito l'ordine: hover primo,
+  `ExpandCollapse` fallback (tenuto per host senza mouse). Effetto:
+  `capabilities` **~4,6 → ~3,6 s**.
+- `SETUP` — Misurato dal vivo (Opus 4.8/Alto): `setModel` **~1,6 s** (era
+  2,5–7,6 s), cambio marcia completo **~5,1 s** (era 9–20 s). `test.js` M1
+  PASSATO col codice nuovo. **Mai selezionato Fable; marce rimesse a posto.**
+  Cache validata anche su albero UIA reale: 59 nodi in 80 ms.
+- `SCOPERTA` — **Resta un'impennata sporadica a ~10 s** su `capabilities` dopo
+  un cambio modello (10,6 s vs 4,7 s): non è la scansione, è il menu che tarda
+  a comparire. Le attese fisse (`Start-Sleep`) restano tarate dal vivo, non
+  toccate.
 
 ## 2026-07-21 (sessione 13 — backend su main + ricollaudo M1)
 
 - `DECISIONE` — **Backend spinto direttamente su `main`, saltando la PR.**
-  Ritenuto il backend pronto per far partire il frontend, l'utente ha chiesto —
-  con permesso esplicito e consapevole — di riversare i 21 commit del branch
-  `simone_fullstack_branch` su `main` con **push diretto**, invece della pull
-  request prevista da `CLAUDE.local.md`. Motivo dichiarato: sbloccare subito il
-  frontend senza attendere il giro della PR. Conseguenza messa a verbale: la
-  modifica arriva su `main` (condiviso col collega `matteoccll`) **senza la sua
-  revisione** — scelta dell'utente, non una svista. Push in fast-forward, nessun
-  `--force`; `origin/main` ora = `3a30f75`, 0 commit di scarto dal branch.
-- `SETUP` — **Ricollaudo M1 dal vivo (`test.js`)** sull'app Claude Desktop a
-  Opus 4.8 / Alto / cursore 2 (scala 0-5): `enumerate` (1 sessione), `setModel`
-  Opus 4.8 ↔ Sonnet 5, `setEffort` 2 ↔ 1 (Alto ↔ Medio), stato finale identico
-  alla partenza. **Esito: M1 PASSATO.** Mai selezionato Fable; ogni marcia
-  spostata rimessa a posto.
-- `SETUP` — **`selectSession` non esercitato in questa esecuzione**: la sidebar
-  aveva **una sola conversazione** aperta ("Backend readiness e push su main"),
-  quindi il giro andata/ritorno è stato saltato (serve una seconda sessione, come
-  in sessione 11). Il resto del cambio-marcia è stato verificato e ripristinato.
+  L'utente ha chiesto — con permesso esplicito — push diretto dei 21 commit di
+  `simone_fullstack_branch` per sbloccare subito il frontend. Conseguenza:
+  arriva su `main` (condiviso con `matteoccll`) **senza sua revisione** —
+  scelta esplicita, non svista. Fast-forward, no `--force`; `origin/main` =
+  `3a30f75`.
+- `SETUP` — Ricollaudo M1 dal vivo (Opus 4.8/Alto/cursore 2): `enumerate` (1
+  sessione), `setModel` Opus↔Sonnet, `setEffort` 2↔1, stato ripristinato.
+  **Esito: PASSATO.** Mai Fable.
+- `SETUP` — `selectSession` non esercitato: sidebar con 1 sola conversazione,
+  giro andata/ritorno saltato (serve una seconda sessione).
 
 ## 2026-07-21 (sessione 12 — backend: chiusi i due difetti aperti + collaudo dal vivo)
 
-- `FIX` — **`selectSession` non sporca più il canale NDJSON e conferma il
+- `FIX` — **`selectSession` non sporca più l'NDJSON e conferma il
   bersaglio.** Il dispatch chiamava `Op-SelectSession` senza catturarne il
-  risultato: in PowerShell un valore non catturato finisce sulla pipeline, così
-  la hashtable `@{title=...}` usciva su stdout come tabella in mezzo al
-  protocollo, e la risposta al client era `null` — contro il principio §7 di
-  PROJECT (il bersaglio si conferma, non si deduce). Chiuso catturando il
-  risultato in `$sel` e rispondendo con quello. Verificato alla radice parlando
-  col broker grezzo (senza il client, che scarta le righe non-JSON e avrebbe
-  nascosto il leak): stdout = solo NDJSON, 0 righe non-JSON, risposta
+  risultato → la hashtable finiva su stdout come tabella (leak), risposta al
+  client `null` (contro il principio §7 di PROJECT). Chiuso catturando in
+  `$sel`. Verificato sul broker grezzo: 0 righe non-JSON, risposta
   `{title:"..."}`.
-- `FIX` — **`test.js` non dichiara più "M1 PASSATO" saltando l'effort.** Lo skip
-  guardava solo `startLevel === null`, che confondeva "modello senza splitter"
-  (Haiku, skip legittimo) con "scala non letta" (guasto) — la stessa confusione
-  già chiusa in `map.js` con `hasControl`. Ora i tre casi sono distinti: scala
-  letta → collauda `setEffort` e segna `effortTested`; controllo assente → skip
-  onesto e verdetto "M1 PASSATO SENZA EFFORT"; controllo presente ma scala non
-  letta → FAIL, non skip. Un collaudo verde non implica più che `setEffort`
-  funzioni.
-- `SETUP` — **Collaudato tutto il backend dal vivo, due giri**, sull'app a
-  Opus 4.8 / Alto / cursore 2. Passati `state`, `probe`, `capabilities` (6 marce,
-  7 modelli, `errors` vuoto, cruscotto ~10%/41%), `fastmode` (read), `reattach`
-  3/3, e `test.js` M1 completo: enumerate (2 sessioni), `selectSession`
-  andata/ritorno con marcia coincidente al rientro, `setModel` Opus↔Sonnet,
-  `setEffort` 2↔1, stato ripristinato. Il ramo discriminante del bug 2 provato
-  innestando Haiku 4.5 (verdetto "M1 PASSATO SENZA EFFORT") e ripristinando
-  Opus 4.8. **Mai selezionato Fable; ogni marcia spostata rimessa a posto.**
-  Stato finale identico a quello di partenza.
-- `SCOPERTA` — **La sidebar ha mostrato 2 conversazioni**, quindi per la prima
-  volta il giro completo di `selectSession` dentro `test.js` è stato eseguito
-  davvero (in sessione 11 se ne vedeva una sola e veniva saltato). Nessuna
-  collisione fra "Untitled session" e "Untitled session (fork)": `Op-SelectSession`
-  fa match per uguaglianza esatta (`-eq`).
-- `SETUP` — **Non rilanciati di proposito**: `map.js` (seleziona ogni modello
-  incluso Fable per misurare le scale — vietato nei collaudi, e la `gearbox.json`
-  è già validata identica), `detachtest.js` (richiede l'app davvero chiusa da un
-  terminale esterno, non fattibile girando dentro l'app stessa).
+- `FIX` — **`test.js` non dichiara più "PASSATO" saltando l'effort.** Lo skip
+  guardava solo `startLevel === null`, confondendo "no splitter" (Haiku, skip
+  ok) con "scala non letta" (guasto) — stessa trappola già chiusa in `map.js`
+  con `hasControl`. Ora 3 casi distinti: letta → collauda `setEffort`;
+  assente → skip onesto "PASSATO SENZA EFFORT"; presente-ma-non-letta → FAIL.
+- `SETUP` — Collaudato tutto il backend, 2 giri (Opus 4.8/Alto/cursore 2):
+  `state`, `probe`, `capabilities` (6 marce, 7 modelli, `errors` vuoto,
+  10%/41%), `fastmode`, `reattach` 3/3, `test.js` M1 completo (`enumerate` 2
+  sessioni, `selectSession` andata/ritorno, `setModel`/`setEffort`
+  ripristinati). Ramo Haiku provato ("PASSATO SENZA EFFORT"). Mai Fable.
+- `SCOPERTA` — **Sidebar con 2 conversazioni**: primo giro completo di
+  `selectSession` dentro `test.js` (sess. 11 ne vedeva 1 sola). Nessuna
+  collisione fra "Untitled session"/"(fork)": match per uguaglianza esatta.
+- `SETUP` — Non rilanciati apposta: `map.js` (seleziona anche Fable, vietato
+  nei collaudi, `gearbox.json` già validata), `detachtest.js` (serve l'app
+  chiusa da terminale esterno, non fattibile da dentro).
 
 ## 2026-07-21 (sessione 11 — backend: collaudo per il via libera al frontend)
 
-- `SETUP` — Collaudato tutto il backend sull'app viva per rispondere a una
-  domanda sola: si può cominciare il frontend? Passati `capabilities`, `probe`,
-  `state`, `dump`, `test.js`, `enumerate`, `selectSession`, `setModel` e
-  `setEffort` andata/ritorno, il modello senza splitter (Haiku), il riaggancio,
-  11 comandi malformati, due comandi in parallelo, la morte del broker e 7
-  minuti di inattività. **Nessun comando malformato ha cambiato lo stato
-  dell'app**, e ogni prova che sposta la marcia l'ha rimessa a posto.
-- `BUG` `FIX` — **`capabilities` dichiarava "0 marce" su un modello che ne ha 6,
-  con la lista degli errori vuota.** Visto dal vivo su Opus 4.8: la lettura del
-  cursore non si è aperta, e siccome `Op-EffortRange` in quel caso **non lancia
-  un'eccezione** ma risponde educatamente `available: false`, il guasto viaggiava
-  sulla strada buona e `Op-Capabilities` non aggiungeva niente a `errors` — quel
-  ramo scattava solo nel `catch`. Una GUI che si fida di `gears` avrebbe disegnato
-  la leva senza splitter (il caso Haiku) su un modello che lo splitter ce l'ha.
-  Chiuso segnalando in `errors` ogni lettura mancata quando il pulsante esiste, e
-  facendo tentare a `OpenEffortPopup` una seconda apertura prima di arrendersi.
-  Haiku non viene mai ritentato: lì non c'è niente da riprovare.
-- `SETUP` — Il ramo riparato non era osservabile aspettando che il popup si
-  impuntasse di nuovo, quindi è stato forzato su una copia del broker in cui il
-  popup **non si apre mai**: copia guasta → `gears 0` + errore esplicito, broker
-  vero → `gears 6` + `errors` vuoto, Haiku → `errors` vuoto (nessun falso
-  allarme). Le tre risposte sono ora distinguibili a macchina.
-- `BUG` `FIX` — **Una richiesta spedita a un broker morto non tornava mai.**
-  Né risposta né errore: la promessa restava parcheggiata per sempre, perché non
-  falliva niente — passava solo del tempo. `withDeadline` non copriva il caso:
-  ammazza l'intero processo, il che va bene per uno script e non serve a niente
-  dentro una GUI, dove il risultato sarebbe una leva bloccata su "sto cambiando"
-  senza uscita. Chiuso con una scadenza per singola richiesta (2 minuti di base,
-  regolabile per chiamata), il rifiuto immediato verso un broker già morto, e un
-  ascoltatore sull'errore di scrittura — senza quello, la morte del broker poteva
-  portarsi dietro l'intera app. Verificato: rifiuto in pochi ms, scadenza forzata
-  a 1,5 s che scatta a 1504 ms, e la risposta in ritardo che non rompe nulla.
-- `SCOPERTA` — **Il contatore dei consumi è cambiato formato durante la
-  sessione**, da `context 112.8k` a `context 15%, plan 92%`. Conferma dal vivo,
-  a poche ore di distanza, dei due formati già noti dalla sessione 7: il
-  cruscotto a percentuale è disegnabile, ma non sempre. Il broker li legge
-  entrambi.
-- `SCOPERTA` — **Il sottomenu "Altri modelli" non si è aperto con
-  `ExpandCollapse` nemmeno una volta** in tutte le prove della serata (`4 -> 4`
-  ogni volta): l'ha salvato sempre il passaggio del mouse fisico, poi rimesso
-  dov'era. Il metodo pulito, sul campo, non funziona — è l'hover che porta a casa
-  i tre modelli dietro il sottomenu.
-- `SCOPERTA` — **Tempi misurati** (variano con il carico della macchina):
-  `capabilities` 6–15 s, `setModel` 2,5–7,6 s, `selectSession` ~1,3 s,
-  `effortRange` ~0,8 s, `readGear` ~0,2 s. Siccome la griglia va richiesta di
-  nuovo dopo ogni cambio modello, un cambio marcia completo tiene la leva
-  occupata dai 9 ai 20 secondi. La scadenza per richiesta **non annulla** il
-  lavoro del broker: smette di aspettarlo, e il comando dopo si mette in fila.
-- `SCOPERTA` — 7 minuti di inattività non degradano l'aggancio: alla ripresa
-  `readGear` risponde immediato e `effortRange` legge la scala.
-- `BUG` — **`selectSession` non dice su cosa ha agito e sporca il canale.**
-  Risponde `null`, perché il dispatch butta via il titolo che l'operazione
-  produce; e quel valore non raccolto finisce **su stdout come testo**, in mezzo
-  al protocollo NDJSON (viste dal vivo tre righe di tabella PowerShell fra un
-  messaggio e l'altro). Oggi è innocuo — il client scarta le righe non-JSON — ma
-  cozza con il principio §7 di PROJECT: il bersaglio si conferma, non si deduce.
-  Lasciato aperto.
-- `BUG` — **`test.js` ha scritto "M1 PASSATO" senza aver mai provato
-  `setEffort`.** Per via del difetto qui sopra ha concluso "il modello di
-  partenza non ha lo splitter" — su Opus 4.8 — e ha saltato il passo restando
-  verde. È la stessa trappola già chiusa in `map.js` con `hasControl`, mai
-  riportata in `test.js`. Finché resta così, un collaudo verde non dimostra che
-  il cambio di effort funzioni. Lasciato aperto.
-- `SCOPERTA` — **`enumerate` ha trovato una sola conversazione**: legge quello
-  che la sidebar sta disegnando in quel momento, non l'archivio delle chat.
-- `DECISIONE` — **Il frontend parte dalla leva e dal cruscotto sulla
-  conversazione attiva, non dalla tendina.** Motivo: `capabilities` è provato,
-  stabile e copre già le due forme che la leva deve prendere (6 marce e Haiku
-  senza splitter), mentre il targeting per sessione poggia sui due pezzi più
-  deboli — `enumerate` che stasera vedeva una conversazione sola, e
-  `selectSession` che non sa dire cosa ha fatto. Costruire la UX della tendina
-  adesso significherebbe costruirla sulla parte che non regge.
+- `SETUP` — Collaudato tutto il backend per rispondere a: si può cominciare il
+  frontend? Passati `capabilities`, `probe`, `state`, `dump`, `test.js`,
+  `enumerate`, `selectSession`, `setModel`/`setEffort` andata/ritorno, Haiku
+  senza splitter, riaggancio, 11 comandi malformati, 2 comandi in parallelo,
+  morte del broker, 7 min di inattività. **Nessun comando malformato ha
+  cambiato lo stato dell'app**; marce rimesse a posto.
+- `BUG` `FIX` — **`capabilities` dichiarava "0 marce" su un modello con 6,
+  `errors` vuoto.** La lettura del cursore non si apriva, e `Op-EffortRange`
+  in quel caso risponde educatamente `available: false` senza eccezione:
+  scattava solo nel `catch`, quindi il guasto viaggiava sulla strada buona. Una
+  GUI fidata avrebbe disegnato la leva-senza-splitter (Haiku) su un modello che
+  lo splitter ce l'ha. Chiuso: ogni lettura mancata (pulsante presente) finisce
+  in `errors`; `OpenEffortPopup` ritenta una volta prima di arrendersi. Haiku
+  mai ritentato.
+- `SETUP` — Ramo riparato forzato su una copia col popup che non si apre mai:
+  copia guasta → `gears 0` + errore esplicito, broker vero → `gears 6` +
+  `errors` vuoto, Haiku → `errors` vuoto. Le tre risposte distinguibili a
+  macchina.
+- `BUG` `FIX` — **Una richiesta a un broker morto non tornava mai** (né
+  risposta né errore, passava solo tempo): `withDeadline` ammazzava l'intero
+  processo, utile per uno script ma non per una GUI (leva bloccata su "sto
+  cambiando" senza uscita). Chiuso con scadenza per singola richiesta (2 min
+  base, regolabile), rifiuto immediato su broker già morto, ascoltatore
+  sull'errore di scrittura. Verificato: rifiuto in pochi ms, scadenza forzata
+  a 1,5 s scatta a 1504 ms.
+- `SCOPERTA` — **Il contatore dei consumi ha cambiato formato durante la
+  sessione stessa** (`context 112.8k` → `context 15%, plan 92%`), a conferma
+  dei due formati già noti dalla sess. 7. Il broker li legge entrambi.
+- `SCOPERTA` — Il submenu "Altri modelli" **non si è aperto con
+  `ExpandCollapse` nemmeno una volta** in tutte le prove (`4 -> 4` ogni
+  volta): solo l'hover fisico lo salva.
+- `SCOPERTA` — Tempi misurati: `capabilities` 6–15 s, `setModel` 2,5–7,6 s,
+  `selectSession` ~1,3 s, `effortRange` ~0,8 s, `readGear` ~0,2 s. Cambio
+  marcia completo: 9–20 s (la griglia va richiesta di nuovo dopo ogni cambio
+  modello). La scadenza per richiesta **non annulla** il lavoro del broker,
+  smette solo di aspettarlo.
+- `SCOPERTA` — 7 minuti di inattività non degradano l'aggancio.
+- `BUG` — **`selectSession` non dice su cosa ha agito** (risponde `null`, il
+  dispatch butta il titolo) e **sporca stdout** con una tabella PowerShell in
+  mezzo all'NDJSON. Innocuo oggi (il client scarta le righe non-JSON) ma
+  contro il principio §7. Lasciato aperto.
+- `BUG` — **`test.js` scrive "PASSATO" senza aver mai provato `setEffort`**
+  (stessa trappola già chiusa in `map.js` con `hasControl`, mai riportata
+  qui). Lasciato aperto.
+- `SCOPERTA` — `enumerate` trova **1 sola conversazione**: legge la sidebar
+  del momento, non l'archivio delle chat.
+- `DECISIONE` — **Il frontend parte dalla leva/cruscotto sulla conversazione
+  attiva, non dalla tendina.** Motivo: `capabilities` è provata e stabile, il
+  targeting per sessione (`enumerate`, `selectSession`) è ancora la parte più
+  debole.
 
 ## 2026-07-21 (sessione 10 — backend: controllo generale e quattro difetti chiusi)
 
-- `SETUP` — Controllo generale del backend sull'app viva: parse di `broker.ps1`,
-  sintassi dei 13 file JS, poi `capabilities` (5,8 s, 7 modelli col sottomenu
-  aperto all'hover), `reattach` 2/2, `test.js` M1 passato con ripristino
-  verificato, e una batteria nuova sui rami d'errore (comando ignoto, modello
-  inesistente, effort fuori scala, sessione inesistente): tutti errori puliti,
-  **nessuno ha cambiato lo stato dell'app**.
-- `BUG` `FIX` — **`setModel` senza il nome innestava Fable 5.** Con l'argomento
-  mancante il match "a somiglianza" di `FindModelOption` diventava `-like "*"`,
-  che accetta tutto e restituisce la prima voce del menu. E la verifica **passava**:
-  il broker rileggeva il pulsante, ci trovava davvero "Fable 5" e rispondeva `ok`.
-  Un campo `undefined` lato GUI sparisce dal JSON senza far rumore, quindi il caso
-  era a una riga di distanza, non ipotetico. Chiuso con tre sbarramenti: il jolly
-  non degenera più (nome vuoto → nessun match), `Op-SetModel` rifiuta prima di
-  aprire il menu, il dispatch controlla che il campo sia arrivato.
-- `BUG` `FIX` — **`setEffort` senza il livello scendeva al minimo in silenzio.**
-  `[int]$null` vale `0`, che è dentro la scala, quindi il controllo "fuori range"
-  non scattava. Aggiunto `ReqArg`, che distingue **"il campo non c'è"** da **"il
-  campo c'è e vale zero"** — differenza che prima non esisteva. Il livello deve
-  anche essere un intero: `"alto"` e `2.7` vengono respinti. Verificato apposta
-  che `level: 0` continui a passare: zero è la marcia più bassa, non un valore
-  mancante.
-- `FIX` — **Il puntatore non veniva più restituito.** Aprire il sottomenu "Altri
-  modelli" richiede un hover vero, quindi ogni `capabilities` trascinava il mouse
-  attraverso lo schermo e ce lo lasciava — e la GUI deve chiamare `capabilities`
-  dopo ogni cambio marcia. Ora la posizione viene salvata al primo movimento e
-  rimessa alla fine del comando (in un `finally`, così vale anche per i comandi
-  falliti a metà menu), mai fra un movimento e l'altro: il sottomenu resta aperto
-  solo finché il puntatore ci sta sopra. Se nel frattempo è stato l'utente a
-  muovere il mouse, il broker lo lascia stare.
-- `SCOPERTA` — **`$home` in PowerShell è riservata, e il confronto fra nomi di
-  variabile è insensibile alle maiuscole.** Scritta durante il fix qui sopra, ha
-  prodotto un errore non terminante a ogni comando; il nome restava a contenere
-  il percorso del profilo, la guardia `$null -eq` lo trovava valorizzato e
-  proseguiva, e `[int]$origin.X` su una stringa dava `0` — **puntatore spedito a
-  0,0 a ogni comando**, peggio del problema di partenza. Rinominata `$origin`.
-  È la stessa famiglia di `$PID`, già evitata nel file chiamando `$script:pid0`
-  quel campo; ora il motivo è scritto accanto alla funzione. Passato tutto il
-  file al setaccio: nessun'altra collisione (i `$null = ...` sono lo scarto
-  idiomatico).
-- `SETUP` — Il ripristino del puntatore è stato **misurato**, non dedotto: mouse
-  a 640,400, `capabilities.js`, rilettura → 640,400, scarto 0 px. Il difetto di
-  `$home` era invisibile agli esiti verdi dei collaudi (i test guardavano la
-  marcia, non il mouse) ed è emerso solo dal rumore su stderr nel report.
-- `BUG` `FIX` — **`map.js` si fidava della lista modelli.** Leggeva `listModels`
-  senza la normalizzazione che `capabilities()` ha già: se l'app offrisse un solo
-  modello, PowerShell 5.1 lo consegna come oggetto singolo e `models.forEach`
-  esplode. Aggiunto `listModels()` al client, che restituisce sempre un array.
-  Ipotetico con 7 modelli, ma è la stessa trappola già documentata nel client.
+- `SETUP` — Controllo generale: parse di `broker.ps1`, sintassi dei 13 file
+  JS, `capabilities` (5,8 s, 7 modelli col submenu ad hover), `reattach` 2/2,
+  `test.js` M1 passato con ripristino, batteria sui rami d'errore (comando
+  ignoto, modello inesistente, effort fuori scala, sessione inesistente):
+  tutti puliti, **nessuno ha cambiato lo stato dell'app**.
+- `BUG` `FIX` — **`setModel` senza il nome innestava Fable 5.** Il match "a
+  somiglianza" di `FindModelOption` degenerava in `-like "*"` (accetta tutto,
+  prende la prima voce del menu), e la verifica **passava** (rileggeva "Fable
+  5", rispondeva `ok`). Un campo `undefined` lato GUI sparisce dal JSON senza
+  rumore: il caso era a una riga di distanza. Chiuso con 3 sbarramenti: il
+  jolly non degenera più (nome vuoto → nessun match), `Op-SetModel` rifiuta
+  prima di aprire il menu, il dispatch controlla che il campo sia arrivato.
+- `BUG` `FIX` — **`setEffort` senza il livello scendeva al minimo in
+  silenzio.** `[int]$null` vale `0`, dentro la scala, quindi il controllo
+  "fuori range" non scattava. Aggiunto `ReqArg`, che distingue "campo assente"
+  da "campo presente e zero". Il livello deve anche essere un intero (`"alto"`
+  e `2.7` respinti). Verificato che `level: 0` continui a passare.
+- `FIX` — **Il puntatore non veniva restituito.** Aprire il submenu richiede
+  hover vero: ogni `capabilities` trascinava il mouse e lo lasciava lì (la GUI
+  chiama `capabilities` dopo ogni cambio marcia). Ora la posizione è salvata
+  al primo movimento e rimessa a fine comando in un `finally` (anche sui
+  comandi falliti a metà), mai fra un movimento e l'altro.
+- `SCOPERTA` — **`$home` in PowerShell è riservata** (confronto nomi
+  insensibile alle maiuscole): la variabile del fix precedente collideva,
+  produceva un errore non terminante a ogni comando e mandava il puntatore a
+  0,0 — peggio del problema di partenza. Rinominata `$origin`. Stessa famiglia
+  di `$PID` (già evitata con `$script:pid0`). Setacciato tutto il file:
+  nessun'altra collisione.
+- `SETUP` — Ripristino del puntatore **misurato**: 640,400 → `capabilities.js`
+  → rilettura 640,400, scarto 0 px. Il difetto `$home` era invisibile ai
+  collaudi verdi (guardavano la marcia, non il mouse), emerso dal rumore su
+  stderr.
+- `BUG` `FIX` — **`map.js` si fidava della lista modelli** senza la
+  normalizzazione che `capabilities()` ha già (PowerShell 5.1 collassa un
+  array di 1 elemento in oggetto singolo: con un solo modello `forEach`
+  esplode). Aggiunto `listModels()` al client, sempre array.
 
 ## 2026-07-21 (sessione 9 — backend: chiusi i due difetti di `map.js`)
 
 - `BUG` `FIX` — **Un modello storto buttava all'aria l'intera mappatura.** In
-  `map.js` il `setModel` di ogni giro era protetto da un `try`, il `probeEffort`
-  subito dopo no: un suo errore risaliva fino al `finally`, chiudendo la run e
-  perdendo anche i modelli già misurati bene. Ora i due passaggi si comportano
-  allo stesso modo — errore scritto nel report, modello contato fra i non
-  misurati, giro che continua. Un guasto costa un modello, non la serata.
-- `BUG` `FIX` — **Lo script usciva 0 anche a mappa dichiarata incompleta.** Il
-  ramo protettivo aggiunto in sessione 8 rifiutava di sovrascrivere
-  `gearbox.json` ma restituiva comunque successo: un esito verde che non
-  significava niente per chi non apriva il report. Ora la mappa monca esce **3**.
-  Codici documentati in cima al file: 0 completa, 1 errore fatale, 2 deadline,
-  3 incompleta. Usato `process.exitCode` e non `process.exit()`, così il report
-  viene scritto e il broker chiuso come prima. Chiude il rinvio deciso in
-  sessione 8.
+  `map.js` il `setModel` di ogni giro era protetto da `try`, il `probeEffort`
+  no: un suo errore risaliva al `finally`, perdendo anche i modelli già
+  misurati. Ora stesso trattamento: errore scritto nel report, modello contato
+  fra i non misurati, giro che continua.
+- `BUG` `FIX` — **Lo script usciva 0 anche a mappa incompleta.** Il ramo
+  protettivo di sess. 8 rifiutava di sovrascrivere `gearbox.json` ma
+  restituiva comunque successo. Ora la mappa monca esce **3** (codici: 0
+  completa, 1 fatale, 2 deadline, 3 incompleta), via `process.exitCode` (non
+  `exit()`) così il report resta scritto.
 
 ## 2026-07-21 (sessione 8 — backend: collaudo completo e la mappa che si cancellava)
 
-- `SETUP` — Collaudato l'intero backend sull'app viva, partendo dai comandi che
-  non toccano nulla: `state`, `probe`, `capabilities`, `fastmode`, `popup`,
-  `effortpopup`, `dump`, `tree` tutti passati; `reattach` 3/3 recuperi in ~850 ms
-  l'uno; `test.js` 6 verifiche su 6 con ripristino confermato. Il giro di
-  `selectSession` è stato saltato: in sidebar c'era una sola conversazione.
-- `BUG` — **`map.js` ha cancellato la mappa buona.** Una run in cui i tre modelli
-  dietro il sottomenu "Altri modelli" non si sono lasciati raggiungere ha
-  comunque riscritto `gearbox.json`, sostituendo le scale di effort di quattro
-  modelli con altrettanti messaggi d'errore (97 righe perse, 6 aggiunte). La
-  scrittura era incondizionata: nessuna distinzione fra mappa completa e mappa
-  monca. Dato recuperato da git, che lo teneva a HEAD.
-- `DECISIONE` `FIX` — **`gearbox.json` si scrive solo a mappa completa.** Se anche
-  un solo modello abilitato non è stato misurato, il file buono resta intatto e
-  il risultato zoppo va in `gearbox-partial.json` (aggiunto al `.gitignore`: è
-  uno scarto diagnostico, non una mappa). Motivo: la mappa non è un log, è
-  l'unica misura completa che esista, e una serata sfortunata al menu non deve
-  poterla cancellare. Scartata l'alternativa di fondere il vecchio col nuovo per
-  i modelli falliti: spaccerebbe misure di ieri per misure di stasera, contro
-  "il backend rileva, non dichiara" (PROJECT §4.1).
-- `SCOPERTA` `FIX` — **Due risposte vuote che si assomigliano.** "Questo modello
-  non ha l'effort" (Haiku: misura riuscita) e "l'effort non si è aperto"
-  (fallimento di lettura) erano distinguibili solo dal testo inglese del campo
-  `reason`. Farci dipendere `map.js` sarebbe stata la trappola che in sessione 7
-  aveva ucciso `test.js`. Aggiunto al broker il campo `hasControl`, leggibile a
-  macchina, nei tre punti che producono quella risposta (`Op-EffortRange`,
-  `Op-ProbeEffort`, `Op-Capabilities`).
-- `BUG` — **Il sottomenu "Altri modelli" a volte non si apre, e non si sa
-  perché.** Nel log della run fallita: `4 -> 0`, cioè dopo l'`Expand()` il menu
-  intero è sparito invece di espandersi, e i tentativi successivi (hover, click)
-  trovavano un elemento senza punto cliccabile. Non riproducibile a comando: 3
-  giri isolati di `probe` e un repro mirato subito dopo Haiku l'hanno visto
-  funzionare 4 volte su 4, e la rimappatura successiva ha fatto 7/7. Causa non
-  trovata. Resta aperto — ma ora non fa più danni permanenti.
-- `SCOPERTA` — **Il degrado era un incidente, non un cambiamento dell'app.** La
-  rimappatura completa ha prodotto un `gearbox.json` identico a quello
-  precedente tranne il timestamp: le scale di effort dei 7 modelli non si sono
-  mosse.
-- `SETUP` — Il ramo protettivo non era osservabile aspettando che il sottomenu si
-  impuntasse di nuovo, quindi è stato forzato con un modello inesistente su una
-  copia dello script: Haiku misurato e **non** contato come buco, il modello
-  fasullo contato, scritto solo il parziale, e l'impronta SHA256 di
-  `gearbox.json` identica prima e dopo.
-- `DECISIONE` — **Rinviati apposta gli altri due difetti di `map.js`**, su
-  richiesta: `probeEffort` non è protetto mentre `setModel` sì (un suo errore
-  butta all'aria l'intera run, comprese le misure già fatte), e lo script esce
-  sempre 0 — anche a mappa dichiarata incompleta. Due politiche opposte per lo
-  stesso tipo di guasto, e un esito verde che non significa niente.
+- `SETUP` — Collaudato l'intero backend: `state`, `probe`, `capabilities`,
+  `fastmode`, `popup`, `effortpopup`, `dump`, `tree` tutti passati; `reattach`
+  3/3 (~850 ms l'uno); `test.js` 6/6 con ripristino confermato. `selectSession`
+  saltato (1 sola conversazione in sidebar).
+- `BUG` — **`map.js` ha cancellato la mappa buona.** Una run in cui i 3
+  modelli dietro "Altri modelli" non si sono lasciati raggiungere ha comunque
+  riscritto `gearbox.json`, sostituendo le scale di 4 modelli con messaggi
+  d'errore (97 righe perse, 6 aggiunte). Scrittura incondizionata. Recuperato
+  da git (HEAD).
+- `DECISIONE` `FIX` — **`gearbox.json` si scrive solo a mappa completa.** Un
+  solo modello non misurato → file buono intatto, risultato zoppo in
+  `gearbox-partial.json` (in `.gitignore`, è uno scarto diagnostico). Motivo:
+  la mappa è l'unica misura completa esistente, non un log. Scartata
+  l'alternativa di fondere vecchio+nuovo (spaccerebbe misure di ieri per
+  misure di oggi, contro "il backend rileva, non dichiara", PROJECT §4.1).
+- `SCOPERTA` `FIX` — **Due risposte vuote si somigliano**: "modello senza
+  effort" (Haiku, misura riuscita) e "effort non apertosi" (fallimento),
+  distinguibili solo dal testo inglese di `reason`. Aggiunto il campo
+  `hasControl` (leggibile a macchina) in `Op-EffortRange`, `Op-ProbeEffort`,
+  `Op-Capabilities`.
+- `BUG` — **Il submenu "Altri modelli" a volte non si apre, causa ignota.**
+  Log: `4 -> 0` (il menu sparisce dopo `Expand()` invece di espandersi),
+  tentativi successivi trovano un elemento senza punto cliccabile. Non
+  riproducibile a comando (funzionato 4/4 e poi 7/7 in prove isolate). Resta
+  aperto, ma non fa più danni permanenti.
+- `SCOPERTA` — **Il degrado era un incidente**, non un cambiamento dell'app:
+  la rimappatura completa ha prodotto un `gearbox.json` identico al precedente
+  (solo timestamp diverso).
+- `SETUP` — Ramo protettivo forzato con un modello inesistente su una copia
+  dello script: Haiku misurato e non contato come buco, modello fasullo
+  contato, scritto solo il parziale, SHA256 di `gearbox.json` identico
+  prima/dopo.
+- `DECISIONE` — **Rinviati apposta gli altri due difetti di `map.js`**
+  (`probeEffort` non protetto, script che esce sempre 0): due politiche
+  opposte per lo stesso tipo di guasto.
 
 ## 2026-07-20 (sessione 7 — backend: collaudo dal vivo e sei riparazioni)
 
-- `SETUP` — Collaudato l'intero backend sull'app viva **prima** di toccare il
-  codice: `state`, `probe`, `capabilities`, `reattach` (3/3 recuperi, ~0,8 s
-  l'uno) e la catena M1 completa — enumerate → selectSession andata/ritorno →
-  setModel andata/ritorno → setEffort andata/ritorno — con verifica delle
-  etichette a ogni passo e ripristino finale confermato. Il cuore del broker
-  reggeva; i difetti erano tutti ai bordi.
+- `SETUP` — Collaudato l'intero backend **prima** di toccare il codice:
+  `state`, `probe`, `capabilities`, `reattach` (3/3, ~0,8 s l'uno), catena M1
+  completa (`enumerate` → `selectSession` andata/ritorno → `setModel`
+  andata/ritorno → `setEffort` andata/ritorno) con verifica a ogni passo e
+  ripristino confermato.
 - `BUG` `FIX` — **Il cruscotto era cieco e non lo diceva.** Il contatore
-  dell'app oscilla fra due formati — `Usage: context 14%, plan 32%` e
-  `Usage: context 127.5k, plan 41%` (token assoluti) — visti entrambi nella
-  stessa serata. `readUsage` capiva solo la percentuale, e `capabilities`
-  restituiva il cruscotto vuoto **senza registrarlo in `errors`**: il
-  fallimento silenzioso che quella lista doveva impedire. Ora il parser legge
-  entrambi i formati (e la virgola decimale), riporta il testo grezzo, e un
-  cruscotto assente o illeggibile compare in `errors`.
-- `BUG` `FIX` — **test.js era morto e con lui il collaudo di selectSession.**
-  Parlava il protocollo di due generazioni fa (`{sessions}` invece di
-  `{count,text}`) e crollava al passo 1 con un TypeError muto; era l'unico
-  script a esercitare `selectSession`. Riscritto sul client condiviso con
-  verifica per passo e auto-ripristino; passato 7 verifiche su 7 in 25 s.
-- `SCOPERTA` `FIX` — **I cercatori di menu pescavano la chat.** I punti elenco
-  markdown della conversazione si renderizzano come `ListItem` e precedono il
-  menu nell'ordine del documento: il broker ha restituito come "interruttore
-  fast mode" il testo di un messaggio della chat. Le voci di menu vere sono
-  solo `Menu`/`MenuItem`/`RadioButton` (verificato col dump): i cercatori ora
-  accettano solo `MenuItem`. Emersa collaudando il fix precedente, non
-  leggendo il codice.
-- `BUG` `FIX` — **fastMode agiva alla cieca.** Lo stato del toggle non è mai
-  stato leggibile (illeggibile in ogni run) e il ramo `set` attuava comunque
-  assumendo "spento", dichiarando poi `changed=true` senza verifica. Ora
-  rifiuta esplicitamente se la voce manca (modelli senza fast mode) o se lo
-  stato non si legge; la lettura resta permessa. Provate entrambe le guardie
-  dal vivo, con ripristino del modello.
-- `FIX` — **ModelBtn non si fida più del solo nome.** La sidebar precede la
-  leva nell'ordine del documento: una conversazione con titolo auto-generato
-  che inizia per Sonnet/Opus/Haiku/Fable sarebbe stata scambiata per il
-  pulsante modello. In sidebar c'era "Prompt efficace per Fable 5" — salva
-  solo perché il titolo non *inizia* col nome. Ora il candidato deve esporre
-  anche `ExpandCollapsePattern`: la leva apre un menu, una riga di sessione no
-  (verificato dal vivo: riga → False, leva → True).
-- `FIX` — **setEffort ora verifica, e probeEffort verifica la cosa giusta.**
-  `setEffort` rispondeva ok con qualunque etichetta fosse rimasta sul
+  oscilla fra due formati (`Usage: context 14%, plan 32%` /
+  `context 127.5k, plan 41%`), `readUsage` capiva solo la percentuale, e
+  `capabilities` restituiva il cruscotto vuoto **senza registrarlo in
+  `errors`**. Ora il parser legge entrambi i formati (e la virgola decimale),
+  riporta il testo grezzo, e un cruscotto assente/illeggibile compare in
+  `errors`.
+- `BUG` `FIX` — **`test.js` era morto**, e con lui il collaudo di
+  `selectSession`: parlava il protocollo di due generazioni fa (`{sessions}`
+  invece di `{count,text}`) e crollava al passo 1 con un TypeError muto.
+  Riscritto sul client condiviso con verifica per passo e auto-ripristino:
+  7/7 in 25 s.
+- `SCOPERTA` `FIX` — **I cercatori di menu pescavano la chat.** I punti
+  elenco markdown si renderizzano come `ListItem` e precedono il menu
+  nell'ordine del documento: il broker ha restituito come "interruttore fast
+  mode" il testo di un messaggio della chat. I cercatori ora accettano solo
+  `MenuItem`/`RadioButton` veri (verificato col dump).
+- `BUG` `FIX` — **`fastMode` agiva alla cieca.** Lo stato del toggle non era
+  mai leggibile, e il ramo `set` attuava comunque assumendo "spento",
+  dichiarando `changed=true` senza verifica. Ora rifiuta esplicitamente se la
+  voce manca o lo stato non si legge; la lettura resta permessa.
+- `FIX` — **`ModelBtn` non si fida più del solo nome.** La sidebar precede la
+  leva nell'ordine del documento: un titolo auto-generato che inizia per
+  Sonnet/Opus/Haiku/Fable sarebbe stato scambiato per il pulsante modello
+  (visto "Prompt efficace per Fable 5" in sidebar). Ora il candidato deve
+  esporre anche `ExpandCollapsePattern` (riga sessione → False, leva → True).
+- `FIX` — **`setEffort` ora verifica, `probeEffort` verifica la cosa
+  giusta.** `setEffort` rispondeva ok con qualunque etichetta rimasta sul
   pulsante; ora rilegge la posizione del cursore e fallisce se non coincide
-  (riaprendo il popup una volta se si è chiuso da solo). `restoredOk` di
-  `probeEffort` controllava solo di aver letto *una* etichetta al ripristino,
-  non che fosse *quella* della posizione di partenza — terza "verifica che non
-  verificava" del progetto; ora confronta con l'etichetta letta dalla spazzata
-  stessa ed espone `expected`.
+  (riapre il popup una volta se si è chiuso da solo). `probeEffort` non
+  controllava di aver riletto *quella* etichetta di partenza, solo *una*
+  etichetta qualsiasi — terza "verifica che non verificava" del progetto; ora
+  confronta con l'etichetta letta dalla spazzata stessa.
 - `FIX` — **Minuzie del client.** `start()` rigetta se PowerShell non parte o
-  se il broker muore prima dell'aggancio (prima restava appeso); `withDeadline`
-  accetta report nullo e scrive su stderr, così anche i diagnostici a console
-  (`probe`, `dump`, `tree`, `popup`) hanno una scadenza; `state.js` le passava
-  la label al posto del report (TypeError muto al timeout); rimosso un
-  watchdog mai assegnato; corretti due commenti che dicevano ancora "closed
-  with Escape".
+  il broker muore prima dell'aggancio; `withDeadline` accetta report nullo e
+  scrive su stderr; `state.js` passava la label al posto del report (TypeError
+  muto al timeout); rimosso un watchdog mai assegnato; corretti due commenti
+  obsoleti.
 - `DECISIONE` — **Lasciati fuori apposta, perché prematuri:** la verifica
-  forte di `selectSession` (serve prima progettare un segnale affidabile di
-  "conversazione attiva") e il match dei titoli per suffisso in
-  `SessionEntries` (un titolo che è suffisso di un altro può agganciare la
-  riga sbagliata). Registrati come rischi noti, da riprendere quando la GUI
-  esisterà.
-- `SCOPERTA` — **detachtest.js risulta lanciato ma abbandonato.** Esiste un
-  report delle 23:06 (16 giri, tutti ok, troncato senza esito): l'app non è
-  mai stata chiusa durante la run. Il ramo "app davvero chiusa" resta non
-  provato, come già dichiarato in PROJECT §10.
-- `SCOPERTA` — **Limite noto:** se una chiamata UIA si pianta davvero, la
-  deadline uccide lo script Node ma il figlio PowerShell resta orfano,
-  bloccato con il client UIA attaccato. Non provocabile senza rischiare l'app
-  che ospita il collaudo.
+  forte di `selectSession` (serve un segnale affidabile di "conversazione
+  attiva") e il match dei titoli per suffisso in `SessionEntries` (un titolo
+  che è suffisso di un altro può agganciare la riga sbagliata). Rischi noti,
+  da riprendere con la GUI.
+- `SCOPERTA` — **`detachtest.js` risulta lanciato e abbandonato** (report
+  delle 23:06, 16 giri ok, troncato senza esito, app mai chiusa durante la
+  run).
+- `SCOPERTA` — **Limite noto:** se una chiamata UIA si pianta, la deadline
+  uccide lo script Node ma il figlio PowerShell resta orfano. Non provocabile
+  senza rischiare l'app che ospita il collaudo.
 
 ## 2026-07-20 (sessione 6 — backend: i due pezzi mancanti del broker)
 
-- `SETUP` — Aggiunto il comando **`capabilities`**: una sola risposta con marcia
-  innestata, effort corrente, **numero di marce del modello attivo**, elenco dei
-  modelli con `enabled`/`selected`, e telemetria del cruscotto. Provato sull'app
-  viva: 7 modelli letti, `Opus 4.8 / Alto`, 6 marce (cursore 0-5), contesto 9% /
-  piano 32%, in 9,9 s.
+- `SETUP` — Aggiunto il comando **`capabilities`**: marcia innestata, effort
+  corrente, numero di marce del modello attivo, elenco modelli con
+  `enabled`/`selected`, telemetria. Provato dal vivo: 7 modelli, Opus
+  4.8/Alto, 6 marce (cursore 0-5), 9%/32%, in 9,9 s.
 - `DECISIONE` — **`capabilities` risponde solo per il modello attivo, non per
-  tutti.** Motivo: una tabella completa richiederebbe di cambiare marcia sette
-  volte a ogni chiamata, e sarebbe una *dichiarazione* — proprio ciò che il
-  principio "il backend rileva, non dichiara" vieta. La GUI richiama il comando
-  dopo ogni `setModel` e ridisegna la griglia.
-- `DECISIONE` — **Fallimento parziale riportato per sezione invece di far
-  fallire tutto il comando.** `capabilities` torna quel che è riuscita a leggere
-  più una lista `errors`. Motivo: una GUI che ha i modelli ma non la corsa
-  dell'effort può disegnare qualcosa di onesto; un errore secco la lascia senza
-  nulla da disegnare.
+  tutti.** Una tabella completa richiederebbe 7 cambi marcia a ogni chiamata,
+  sarebbe una dichiarazione — vieta "il backend rileva, non dichiara". La GUI
+  richiama dopo ogni `setModel`.
+- `DECISIONE` — **Fallimento parziale riportato per sezione, non fallimento
+  totale.** `capabilities` torna quel che riesce a leggere + lista `errors`.
+  Una GUI con modelli ma senza corsa dell'effort può disegnare qualcosa di
+  onesto.
 - `SETUP` — Aggiunto il **riaggancio automatico**: prima di ogni comando il
-  broker verifica di essere ancora legato alla finestra giusta (handle valido →
-  processo vivo e di nome `Claude` → radice UIA che risponde) e, se l'aggancio è
-  caduto, si rilega da solo emettendo l'evento `reattached` (o `detached` se
-  l'app non c'è). Prima restava legato a una finestra morta e ogni comando
-  falliva finché non lo si riavviava a mano.
-- `DECISIONE` — **Il riaggancio non rilancia l'app.** `Attach` prende un
-  parametro `$Launch`: vero all'avvio, falso al riaggancio. Motivo: se l'utente
-  ha chiuso Claude Desktop apposta, riaprirgliela addosso è peggio di un errore
-  chiaro; la GUI accende una spia invece di indovinare.
+  broker verifica handle valido → processo vivo `Claude` → radice UIA che
+  risponde; se caduto, si rilega ed emette `reattached` (o `detached` se
+  l'app non c'è). Prima restava legato a una finestra morta finché non
+  riavviato a mano.
+- `DECISIONE` — **Il riaggancio non rilancia l'app** (`$Launch`: vero
+  all'avvio, falso al riaggancio). Motivo: se l'utente ha chiuso Claude
+  apposta, riaprirgliela addosso è peggio di un errore chiaro.
 - `DECISIONE` — **Non si controlla se `FindClaudeHwnd` restituisce ancora *il
-  nostro* handle.** Restituisce la prima finestra Claude che incontra: con due
-  finestre aperte quel confronto oscillerebbe e il broker si riaggancerebbe a
-  ogni comando.
-- `SCOPERTA` — **Il collaudo onesto del riaggancio non è eseguibile dall'interno.**
-  Il broker si aggancia al processo `Claude`, che è la stessa app dentro cui gira
-  chi lo pilota: chiuderla per provare il recupero chiude anche il collaudo.
-  Aggiunto il comando diagnostico `forceDetach`, che butta via l'aggancio senza
-  toccare l'app, e `reattach.js` che lo usa — 3 recuperi su 3, ~1,4 s l'uno.
-  Copre la metà cara del recupero (ritrovare la finestra, risvegliare l'albero di
-  accessibilità), **non** il rilevamento della morte del processo.
-- `SETUP` — Scritto `detachtest.js` per il ramo non coperto: va lanciato **da un
-  terminale esterno** con l'app aperta, poi si chiude e si riapre Claude Desktop
-  a mano. Nota: si parte a app *aperta* perché all'avvio il broker, se non la
-  trova, la lancia lui. **Non ancora eseguito.**
-- `SETUP` — Aggiunto `capabilities.js` (collaudo di sola lettura) e l'inoltro
-  degli eventi del broker al client Node (`onEvent`), così la GUI vede
+  nostro* handle**: con 2 finestre Claude aperte quel confronto oscillerebbe
+  a ogni comando.
+- `SCOPERTA` — **Il collaudo onesto del riaggancio non è eseguibile
+  dall'interno** (il broker si aggancia allo stesso processo che ospita chi lo
+  pilota). Aggiunto `forceDetach` (butta l'aggancio senza toccare l'app) e
+  `reattach.js`: 3/3, ~1,4 s l'uno. Copre il recupero, non il rilevamento
+  della morte del processo.
+- `SETUP` — Scritto `detachtest.js` per il ramo non coperto (va lanciato da
+  terminale esterno, app chiusa/riaperta a mano). **Non ancora eseguito.**
+- `SETUP` — Aggiunto `capabilities.js` (collaudo di sola lettura) e inoltro
+  degli eventi del broker al client Node (`onEvent`): la GUI vede
   `attached`/`reattached`/`detached` senza interrogare.
-- `SCOPERTA` — **PowerShell 5.1 collassa un array di un elemento in un oggetto
-  singolo** nel JSON. `Broker.capabilities()` normalizza `models` ed `errors` con
-  `[].concat(...)`: se un giorno l'app offrisse un solo modello, la GUI non deve
-  accorgersene.
-- `SCARTATO` — **Provare il riaggancio chiudendo Claude Desktop a mano.** Provato
-  sul campo: chiudere la finestra non chiude l'app (Electron tiene vivo il
-  processo), e chiuderla davvero chiude anche chi sta eseguendo il collaudo,
-  perché è la stessa app. La strada è impraticabile per costruzione, non per
-  sfortuna. `detachtest.js` resta in repo: funzionerebbe su una macchina dove
-  chi collauda non sta dentro l'app, ma qui non è eseguibile.
-- `SETUP` — Scritto `alivecheck.ps1`: prova le tre verifiche di `IsAlive` su una
-  cavia che si può uccidere davvero (una finestra vuota creata apposta), invece
-  che su Claude. Le verifiche non hanno nulla di specifico su Claude, quindi il
-  rilevamento si può provare senza chiudere l'app che ci ospita. Esito: passato.
-- `BUG` `FIX` — **La terza verifica di `IsAlive` non verificava niente.**
-  `$root.Current.Name` continua a rispondere da una copia in memoria anche dopo
-  che il processo è morto: `alivecheck.ps1` la mostrava a `True` su un cadavere.
-  Sostituita con `GetCurrentPropertyValue(NameProperty)`, che va a chiedere
-  davvero e solleva eccezione quando non c'è più nessuno. Le prime due verifiche
-  reggevano già, quindi il broker si comportava bene: il difetto era una falsa
-  sicurezza, non un malfunzionamento.
-- `BUG` `FIX` — **Il riaggancio prendeva la finestra sbagliata.** L'app possiede
-  più finestre; `FindClaudeHwnd` restituiva la prima e il criterio di risveglio
-  era un conteggio di elementi (`> 40`). Una finestra secondaria con 49 elementi
-  e nessuna leva dentro passava il controllo, e da lì ogni comando falliva con
-  `readGear: elements not found`. Osservato dal vivo durante il collaudo.
-  Sostituito con `FindClaudeWindows`, che le elenca tutte, le prova dalla più
-  grande e **accetta solo quella in cui il pulsante del modello esiste** — la
-  cosa di cui ogni operazione ha effettivamente bisogno. Se nessuna ce l'ha
-  (schermata senza selettore) ripiega sulla più ricca e lo scrive nel log.
-- `SCOPERTA` — **Cavie di collaudo scartate su Windows 11.** Il Blocco note è
-  un'app dello Store: `Start-Process notepad` lancia un guscio che termina subito
-  e la finestra vera nasce da un altro processo. `cmd.exe` non possiede più la
-  propria finestra (la tiene il Terminale): `MainWindowHandle` resta 0 a processo
-  vivo. Serve una finestra WinForms creata da un secondo processo PowerShell.
+- `SCOPERTA` — **PowerShell 5.1 collassa un array di 1 elemento in oggetto
+  singolo** nel JSON. `Broker.capabilities()` normalizza `models`/`errors` con
+  `[].concat(...)`.
+- `SCARTATO` — **Provare il riaggancio chiudendo Claude Desktop a mano.**
+  Chiudere la finestra non chiude l'app (Electron la tiene viva), chiuderla
+  davvero chiude anche chi collauda (stessa app). Impraticabile per
+  costruzione. `detachtest.js` resta per una macchina dove chi collauda non è
+  dentro l'app.
+- `SETUP` — Scritto `alivecheck.ps1`: prova le 3 verifiche di `IsAlive` su una
+  cavia uccidibile davvero (finestra vuota), non su Claude. Esito: passato.
+- `BUG` `FIX` — **La 3ª verifica di `IsAlive` non verificava niente.**
+  `$root.Current.Name` risponde da una copia in memoria anche a processo
+  morto (mostrava `True` su un cadavere). Sostituita con
+  `GetCurrentPropertyValue(NameProperty)`, che solleva eccezione se non c'è
+  più nessuno.
+- `BUG` `FIX` — **Il riaggancio prendeva la finestra sbagliata.**
+  `FindClaudeHwnd` restituiva la prima finestra Claude, il criterio di
+  risveglio era un conteggio elementi (`> 40`): una finestra secondaria con 49
+  elementi e nessuna leva passava il controllo, ogni comando falliva con
+  "elements not found". Sostituito con `FindClaudeWindows`: le elenca tutte,
+  prova dalla più grande, accetta solo quella col pulsante modello. Se nessuna
+  ce l'ha, ripiega sulla più ricca e lo logga.
+- `SCOPERTA` — **Cavie di collaudo scartate su Windows 11**: Blocco note
+  (Store app, il processo lanciato termina subito), `cmd.exe` (non possiede
+  più la finestra, la tiene il Terminale). Serve una finestra WinForms da un
+  secondo processo PowerShell.
 
 ## 2026-07-20 (sessione 5 — backend: UIA Broker costruito e mappa del cambio)
 
 - `SETUP` — Costruito il **UIA Broker** in `backend/` come demone persistente
-  (`broker.ps1`) che parla NDJSON su stdin/stdout, più client Node
-  (`client.js`) e strumenti di collaudo (`state.js`, `dump.js`, `tree.js`,
-  `effortpopup.js`, `map.js`). Comandi: `enumerate`, `readGear`, `readUsage`,
-  `selectSession`, `setModel`, `setEffort`, `listModels`, `effortRange`,
-  `probeEffort` + diagnostici.
-- `DECISIONE` — **Broker in PowerShell, non in .NET/C#.** Motivo: `dotnet` non è
-  installato sulla macchina, mentre PowerShell 5.1 espone già
-  `System.Windows.Automation` nativamente. Zero installazioni, e riusa
-  direttamente la logica già provata nei prototipi.
+  (`broker.ps1`, NDJSON su stdin/stdout) + client Node (`client.js`) +
+  strumenti (`state.js`, `dump.js`, `tree.js`, `effortpopup.js`, `map.js`).
+  Comandi: `enumerate`, `readGear`, `readUsage`, `selectSession`, `setModel`,
+  `setEffort`, `listModels`, `effortRange`, `probeEffort` + diagnostici.
+- `DECISIONE` — **Broker in PowerShell, non .NET/C#.** `dotnet` non
+  installato sulla macchina, PowerShell 5.1 espone già
+  `System.Windows.Automation` nativamente. Zero installazioni, riusa la
+  logica dei prototipi.
 - `DECISIONE` — **Rilevamento dinamico invece di tabelle scritte a mano.** Il
-  broker non dichiara quali modelli/effort esistono: li legge dall'app a ogni
-  richiesta. Motivo: una lista hardcoded diventa falsa al primo aggiornamento di
-  Claude e il fallimento sarebbe silenzioso. Richiesta esplicita dell'utente.
+  broker legge modelli/effort dall'app a ogni richiesta, non li dichiara. Una
+  lista hardcoded diventa falsa al primo aggiornamento di Claude, fallimento
+  silenzioso. Richiesta esplicita dell'utente.
 - `DECISIONE` — **Doppio aggancio agli elementi: tabella lingue + fallback
-  strutturale.** Le etichette coprono 10 lingue (inglese primario), ma sotto c'è
-  un riconoscimento per forma — il pulsante effort è "quello espandibile dopo il
-  pulsante modello", in qualunque lingua. Motivo: le traduzioni non-italiane non
-  sono verificabili su questa macchina, quindi non possono essere l'unica difesa.
-- `SCOPERTA` — **L'interfaccia dell'app segue la lingua del sistema: qui è in
-  italiano.** Il pulsante effort è `Impegno: Alto`, non `Effort: High`. La
-  SPEC.md dava per scontato l'inglese. `Usage:` invece resta in inglese.
-- `BUG` `FIX` — **Il broker si auto-interrompeva.** Per chiudere i popup premeva
-  Esc via `keybd_event`. In Claude Desktop Esc annulla il turno in corso: pilotando
-  l'app da un task che gira *dentro* la stessa app, ogni chiusura di popup
-  abbatteva il comando che la stava eseguendo. Sintomo osservato: "Background task
-  interrotto", scambiato per interruzione dell'utente. Risolto chiudendo i popup
-  con `ExpandCollapsePattern.Collapse()`; rimossa la P/Invoke di `keybd_event` per
-  rendere l'errore irripetibile. Rimosso anche `SetForegroundWindow` in attach:
-  le letture sono focus-free.
+  strutturale.** Tabella etichette per 10 lingue (inglese primario), più un
+  riconoscimento per forma (il pulsante effort è "quello espandibile dopo il
+  pulsante modello", in qualunque lingua). Le traduzioni non-italiane non sono
+  verificabili qui.
+- `SCOPERTA` — **L'interfaccia segue la lingua di sistema**: qui italiano
+  (`Impegno: Alto`, non `Effort: High`). SPEC.md dava per scontato l'inglese.
+  `Usage:` resta in inglese.
+- `BUG` `FIX` — **Il broker si auto-interrompeva.** Chiudeva i popup con Esc
+  via `keybd_event`, ma in Claude Desktop Esc annulla il turno in corso:
+  pilotando l'app da un task che gira dentro la stessa app, ogni chiusura
+  popup abbatteva il comando in corso ("Background task interrotto",
+  scambiato per interruzione utente). Risolto con
+  `ExpandCollapsePattern.Collapse()`; rimossa la `keybd_event`. Rimosso anche
+  `SetForegroundWindow` in attach (letture focus-free).
 - `BUG` `FIX` — **PowerShell 5.1 tratta lo stderr di un comando nativo come
-  errore fatale** e abbatteva la run. I log del broker finivano lì. Risolto
+  errore fatale**, abbatteva la run (i log del broker finivano lì). Risolto
   instradando i log in un file di rapporto (`makeReport` in `client.js`).
-- `FIX` — **Prestazioni: da minuti a 11 secondi.** Ogni finder richiamava una
-  scansione completa dell'albero (~900 elementi, ogni proprietà è una chiamata
-  cross-process) e una singola operazione ne faceva decine. Introdotta cache
-  della scansione con invalidazione esplicita dopo ogni azione che muta la UI, e
-  `ControlType`/`Name` letti una volta sola durante la scansione.
-- `FIX` — **File `.ps1` forzato ad ASCII puro.** PowerShell 5.1 legge gli script
-  come ANSI se non c'è il BOM: i caratteri accentati venivano mangiati e le
-  virgolette curve risultanti spezzavano il parsing. I caratteri non-ASCII sono
-  ora scritti come escape `\uXXXX`.
-- `FIX` — **Verifica del cambio modello.** Confrontava l'etichetta del pulsante
-  con il nome del menu comprensivo di decorazioni, e dichiarava fallito un cambio
-  in realtà riuscito. La normalizzazione ora ancora il nome all'inizio della
-  stringa.
-- `SCOPERTA` — **I modelli nell'app sono 7, non 4.** Fable 5, Opus 4.8, Sonnet 5,
-  Haiku 4.5 al primo livello; Opus 4.7, Opus 4.6, Sonnet 4.6 dietro la voce
-  **"Altri modelli"**. Il sottomenu **non si apre con `ExpandCollapse`**: serve
-  passarci sopra (hover). Le voci portano decorazioni da ripulire — il numero
-  della scorciatoia (`Opus 4.8 2`) e, per Fable 5, `Richiede crediti di utilizzo`.
-- `SCOPERTA` — **Il popup dell'effort non contiene i nomi dei livelli.** Dentro
-  ci sono solo lo Slider e due didascalie agli estremi (`Più veloce` /
-  `Più intelligente`). L'unico modo per enumerare i livelli è spostare il cursore
-  e rileggere l'etichetta del pulsante: è un'operazione che modifica davvero lo
-  stato, non una lettura.
-- `SCOPERTA` — **Mappa del cambio completa, letta dal vivo.** Fable 5 / Opus 4.8 /
-  Opus 4.7 / Sonnet 5: 6 marce (`Basso, Medio, Alto, Extra, Max, Ultracode`).
-  Opus 4.6 / Sonnet 4.6: 4 marce (`Basso, Medio, Alto, Max` — salta `Extra`, non
-  è la scala lunga troncata). Haiku 4.5: nessun controllo effort. Salvata in
-  `backend/gearbox.json`.
-- `SCOPERTA` — **La corsa del cursore si accorcia davvero** sui modelli ridotti
-  (`0-3` invece di `0-5`): le posizioni in più non restano disabilitate,
-  spariscono. Quindi il numero di marce è leggibile dall'app senza saperlo prima.
-- `SCOPERTA` — **Le sessioni in sidebar si identificano dal pulsante compagno**
-  `Altre opzioni per <titolo>`, che fornisce il titolo pulito; la riga cliccabile
-  si ritrova per suffisso (è nominata `<stato> <titolo>`). Il formato `#N · nome`
+- `FIX` — **Prestazioni da minuti a 11 s.** Ogni finder scansionava l'intero
+  albero (~900 elementi, ogni proprietà cross-process) e un'operazione ne
+  faceva decine. Aggiunta cache della scansione con invalidazione dopo ogni
+  azione che muta la UI.
+- `FIX` — **File `.ps1` forzato ad ASCII puro.** PowerShell 5.1 senza BOM
+  legge come ANSI (accentate mangiate, virgolette curve spezzano il
+  parsing). Caratteri non-ASCII come escape `\uXXXX`.
+- `FIX` — **Verifica del cambio modello** confrontava l'etichetta col nome
+  del menu comprensivo di decorazioni, dichiarando fallito un cambio riuscito.
+  La normalizzazione ora ancora il nome all'inizio della stringa.
+- `SCOPERTA` — **I modelli sono 7, non 4**: Fable 5/Opus 4.8/Sonnet 5/Haiku
+  4.5 al primo livello, Opus 4.7/Opus 4.6/Sonnet 4.6 dietro "Altri modelli"
+  (non si apre con `ExpandCollapse`, serve hover). Voci con decorazioni da
+  ripulire (scorciatoia, "Richiede crediti di utilizzo" per Fable).
+- `SCOPERTA` — **Il popup effort non contiene i nomi dei livelli**, solo
+  Slider + 2 didascalie agli estremi ("Più veloce"/"Più intelligente").
+  L'unico modo per enumerare i livelli è spostare il cursore e rileggere
+  l'etichetta del pulsante (operazione che muta lo stato).
+- `SCOPERTA` — **Mappa del cambio completa**, letta dal vivo (vedi PROJECT
+  §3.1), salvata in `backend/gearbox.json`.
+- `SCOPERTA` — **La corsa del cursore si accorcia davvero** sui modelli
+  ridotti (0-3): le posizioni extra spariscono, non restano disabilitate.
+- `SCOPERTA` — **Le sessioni in sidebar si identificano dal pulsante
+  compagno** `Altre opzioni per <titolo>` (titolo pulito); la riga cliccabile
+  si ritrova per suffisso (`<stato> <titolo>`). Il formato `#N · nome`
   previsto da SPEC.md non esiste.
-- `SETUP` — Round-trip completo verificato: la mappatura ha cambiato modello 7
-  volte e spazzato il cursore, poi ha **ripristinato e riletto** lo stato
-  iniziale (Opus 4.8 / Alto).
+- `SETUP` — Round-trip completo verificato: la mappatura ha cambiato modello
+  7 volte e spazzato il cursore, poi ha **ripristinato e riletto** lo stato
+  iniziale (Opus 4.8/Alto).
 
 ---
 
 ## 2026-07-20 (sessione 4 — spec GUI e divisione backend/frontend)
 
-- `DECISIONE` — **Controllo modello: manopola rotante a 4 posizioni** (Haiku / Sonnet / Opus / Fable). Scartati pulsanti separati e levette. Motivo: scelta discreta tra 4 opzioni, il gesto "girare" è intuitivo e si abbina visivamente allo stick per l'effort senza sovrapporsi.
-- `DECISIONE` — **Unico stick con doppio gesto: clic sinistro = sposta in H (effort), clic destro = ruota pomello (modello).** Il pomello in cima allo stick gestisce entrambi gli assi con distinzione netta via tasto mouse, evitando conflitti tra gesto lineare e gesto rotazionale. In Electron il menu contestuale del tasto destro viene disabilitato e il gesto diventa dedicato.
-- `DECISIONE` — **Feedback discoverability: targhetta incisa sul pannello** con etichette "sin → cambia marcia / des → ruota modello". Stile engraved (testo piccolo, maiuscoletto, colore smorzato) — parte del design della plancia, non un tooltip aggiunto dopo.
-- `DECISIONE` — **Sviluppo parallelo: backend e frontend assegnati a due collaboratori distinti.** Backend (UIA Broker) sviluppato da Simone; frontend (GUI Electron) sviluppato dall'altro collaboratore. I due lati verranno integrati in una fase successiva.
-- `SCOPERTA` — **Nota per il collega frontend — gesti del pomello.** Nel prototipo `stick_demo.html` la prima implementazione con `mousedown`/`mousemove`/`mouseup` non rilevava il tasto destro: il drag di rotazione risultava inerte. Due correzioni necessarie: (1) usare **Pointer Events con `setPointerCapture`** invece dei mouse event — il tracking regge anche quando il cursore esce dal pomello; (2) calcolare la rotazione come **angolo assoluto verso il puntatore**, non come delta accumulato dal punto di partenza — il delta si sfasa e la rotazione diventa imprevedibile. Aggiunta anche la rotella come input alternativo al tasto destro. Il `contextmenu` va soppresso.
+- `DECISIONE` — **Controllo modello: manopola rotante a 4 posizioni** (Haiku/
+  Sonnet/Opus/Fable). Scartati pulsanti separati e levette: scelta discreta
+  fra 4, gesto "girare" intuitivo, si abbina visivamente allo stick
+  dell'effort.
+- `DECISIONE` — **Unico stick con doppio gesto: clic sinistro = sposta in H
+  (effort), clic destro = ruota pomello (modello).** Distinzione netta via
+  tasto mouse; menu contestuale destro disabilitato in Electron.
+- `DECISIONE` — **Feedback discoverability: targhetta incisa** "sin → cambia
+  marcia / des → ruota modello", stile engraved (testo piccolo maiuscoletto,
+  colore smorzato), parte del design plancia.
+- `DECISIONE` — **Sviluppo parallelo**: backend (Simone) e frontend (altro
+  collaboratore), integrazione in fase successiva.
+- `SCOPERTA` — **Nota per il collega frontend — gesti del pomello.** Nel
+  prototipo `stick_demo.html`, `mousedown`/`mousemove`/`mouseup` non rilevava
+  il tasto destro (drag di rotazione inerte). Fix: (1) **Pointer Events con
+  `setPointerCapture`** invece dei mouse event (regge anche fuori dal
+  pomello); (2) rotazione come **angolo assoluto verso il puntatore**, non
+  delta accumulato (si sfasa). Aggiunta la rotella come input alternativo.
+  `contextmenu` va soppresso.
 
 ---
 
 ## 2026-07-20 (sessione 3 — correzione bersaglio: app Claude Desktop, non terminale)
 
-- `DECISIONE` — **RIBALTATA la sessione 2.** Il bersaglio NON è Claude Code nel
-  terminale: è l'**app Claude Desktop** (MSIX Electron, quella bianca che si apre
-  dal logo). Tutto l'attuatore a console injection della sessione 2 era corretto
-  ma sul bersaglio sbagliato → archiviato. Motivo: richiesta esplicita e ripetuta
-  dell'utente.
-- `SCOPERTA` — L'app Claude Desktop è un pacchetto **MSIX**
-  (`Claude_1.22209.3.0_x64__pzs8sxrjxfjjc`, in `Program Files\WindowsApps\…`),
+- `DECISIONE` — **RIBALTATA la sessione 2.** Il bersaglio non è Claude Code
+  nel terminale, è l'**app Claude Desktop** (MSIX Electron). L'attuatore a
+  console injection della sess. 2 era corretto ma sul bersaglio sbagliato →
+  archiviato. Motivo: richiesta esplicita e ripetuta dell'utente.
+- `SCOPERTA` — App **MSIX**
+  (`Claude_1.22209.3.0_x64__pzs8sxrjxfjjc`, `Program Files\WindowsApps\…`),
   Electron/Chromium. Lancio: `shell:AppsFolder\Claude_pzs8sxrjxfjjc!Claude`.
-  Spawna `claude-code\<ver>\claude.exe --output-format stream-json`: è essa stessa
-  un controller di Claude Code (cowork/CCD).
-- `SCOPERTA` — **Attuatore corretto: Windows UI Automation (UIA) sull'app.**
-  Provato dal vivo end-to-end:
-  - l'albero a11y di Chromium è esposto solo con un **client UIA persistente**
-    attaccato (15 nodi a freddo → 130+ nomi con client attaccato);
-  - modello ed effort correnti sono `Button` leggibili (`'Sonnet 5'`,
-    `'Effort: High'`); telemetria in `Button 'Usage: context 6%, plan 32%'`;
-  - la **tendina sessioni** sono i `Button` `#N · <titolo>` della sidebar;
-  - **switch modello**: espandi il button → `Select` sul `RadioButton`
-    (`Haiku 4.5`/`Sonnet 5·Default`/`Opus 4.8`/`Fable 5`) → etichetta cambia.
-    Provato Sonnet→Opus→Sonnet (self-revert).
-  - **switch effort**: popup con **Slider** 0–5 (`Faster↔Smarter`),
-    `RangeValue.SetValue` → etichetta cambia. Provato High→Medium→High.
-- `SCOPERTA` — Modello/effort valgono sulla **conversazione attiva**: per agire su
-  una sessione bisogna prima selezionarla nella sidebar (che la porta in primo
-  piano nell'app). Vincolo UX da specificare.
-- `BUG` — **Aperto:** attuazione provata con finestra in **foreground**. Da
-  verificare se funziona **senza rubare il focus** (il vecchio bersaglio console
-  era focus-free; questo forse no).
-- `SETUP` — Riscritta [SPEC.md](SPEC.md) su base UIA/app Desktop (v2). Prototipo
-  `prototype/` aggiornato: rimossi gli script console, aggiunti `uia_shifter.ps1`
-  e `uia_effort_slider.ps1`. PROJECT.md allineato.
-- `SCOPERTA` — **Focus valutato: letture focus-free, switch no.** Tenendo il
-  foreground con un'altra finestra, la lettura di modello/effort/sessioni/usage
-  funziona con Claude in background; ma **aprire il menu (switch) porta la finestra
-  Claude in primo piano** (`foreground=CLAUDE` all'apertura del popup). Il
-  monitoraggio è ambientale/non invasivo, ogni cambio marcia invece alza l'app.
-  Inerente al pilotare il popup Electron. Downgrade reale rispetto al vecchio
-  bersaglio console (che era focus-free anche in scrittura).
-- `SCOPERTA` — **Ladder effort: meccanismo provato, mappa completa no.** Slider
-  0–5 via `RangeValue.SetValue` (1=Medium, 2=High confermati). I 6 label non
-  enumerati: il popup effort si apre in modo instabile via `ExpandCollapse`
-  (si auto-chiude / si incastra) e il fallback a click del mouse ha sbagliato le
-  coordinate per **mismatch DPI**. Artefatti del banco di prova, non blocchi:
-  la build deve aprire il popup con un metodo affidabile e usare coordinate
-  DPI-aware.
+  Spawna `claude-code\<ver>\claude.exe --output-format stream-json` (controller
+  Claude Code interno, cowork/CCD).
+- `SCOPERTA` — **Attuatore corretto: Windows UI Automation (UIA).** Provato
+  end-to-end: albero a11y di Chromium esposto solo con client UIA persistente
+  attaccato (15 nodi a freddo → 130+ nomi); modello/effort correnti sono
+  `Button` leggibili (`'Sonnet 5'`, `'Effort: High'`); telemetria in
+  `Button 'Usage: context 6%, plan 32%'`; tendina sessioni = `Button`
+  `#N · <titolo>` della sidebar; switch modello (espandi → `Select` sul
+  RadioButton, provato Sonnet→Opus→Sonnet); switch effort (popup Slider 0-5
+  Faster↔Smarter, `RangeValue.SetValue`, provato High→Medium→High).
+- `SCOPERTA` — Modello/effort valgono sulla **conversazione attiva**: serve
+  selezionarla in sidebar prima (la porta in primo piano). Vincolo UX da
+  specificare.
+- `BUG` — **Aperto:** attuazione provata con finestra in foreground. Da
+  verificare se funziona senza rubare il focus (il vecchio bersaglio console
+  era focus-free, questo forse no).
+- `SETUP` — Riscritta SPEC.md su base UIA/app Desktop (v2). `prototype/`
+  aggiornato: rimossi gli script console, aggiunti `uia_shifter.ps1` e
+  `uia_effort_slider.ps1`. PROJECT.md allineato.
+- `SCOPERTA` — **Focus valutato: letture focus-free, switch no.** Con
+  foreground altrove, lettura modello/effort/sessioni/usage funziona con
+  Claude in background; ma aprire il menu (switch) porta la finestra Claude
+  in primo piano. Downgrade reale rispetto al vecchio bersaglio console
+  (focus-free anche in scrittura).
+- `SCOPERTA` — **Ladder effort: meccanismo provato, mappa non completa.**
+  Slider 0-5 via `RangeValue.SetValue` (1=Medium, 2=High confermati). I 6
+  label non enumerati: popup instabile via `ExpandCollapse`, fallback a click
+  sbagliava le coordinate per mismatch DPI. Artefatti del banco prova, non
+  blocchi.
 
 ---
 
 ## 2026-07-20 (sessione 2 — pivot desktop + attuatore risolto)
 
-- `DECISIONE` — **Pivot: il prodotto è software desktop autonomo, non terminale
-  né web.** L'utente pilota solo la GUI (una leva sola + menu a tendina delle
-  sessioni), mai la tastiera del terminale. Riferimento concettuale: claudeine —
-  "un software che comunica con Claude ma è indipendente dalla sua interfaccia".
-- `DECISIONE` — **Una sola leva con tendina di selezione sessione**, scartata
-  l'ipotesi "una leva per sessione" perché diventa un caos di finestre.
-- `SCARTATO` — **Estensione web / browser.** Il target è il desktop.
-- `SCARTATO` — **Icona-stick iniettata dentro ogni chat.** Elegante (dissolve il
-  targeting) ma richiede injection nel renderer dell'app: fragile su Electron,
-  si rompe a ogni update. Tenuta come idea, non come strada.
-- `SCOPERTA` — **Nessun canale supportato cambia modello/effort a caldo.**
-  Verificato sui doc (vs-code, agent-sdk, model-config, settings): né IDE
-  websocket, né Agent SDK, né settings.json. L'unico meccanismo è il comando
-  `/model`/`/effort`. Quindi l'attuazione deve simularne la digitazione.
+- `DECISIONE` — **Pivot: il prodotto è software desktop autonomo**, non
+  terminale né web. L'utente pilota solo la GUI (leva + tendina sessioni), mai
+  la tastiera del terminale. Riferimento: claudeine.
+- `DECISIONE` — **Una sola leva con tendina di selezione sessione**,
+  scartata l'ipotesi "una leva per sessione" (caos di finestre).
+- `SCARTATO` — **Estensione web/browser.** Il target è il desktop.
+- `SCARTATO` — **Icona-stick iniettata in ogni chat.** Elegante ma richiede
+  injection nel renderer, fragile su Electron, si rompe a ogni update. Tenuta
+  come idea, non come strada.
+- `SCOPERTA` — **Nessun canale supportato cambia modello/effort a caldo**
+  (verificato sui doc: vs-code, agent-sdk, model-config, settings — né IDE
+  websocket, né Agent SDK, né settings.json). Unico meccanismo: comando
+  `/model`/`/effort`. L'attuazione deve simularne la digitazione.
 - `SCOPERTA` — **`~/.claude/sessions/<pid>.json` è il registro vivo delle
-  sessioni interattive** (pid, sessionId, cwd, name, status busy/idle). È la
-  sorgente del menu a tendina: fra ~14 `claude.exe` isola correttamente le 2
-  interattive.
+  sessioni interattive** (pid, sessionId, cwd, name, status). Sorgente del
+  menu a tendina: isola correttamente le 2 interattive fra ~14 `claude.exe`.
 - `SCOPERTA` — **Attuatore risolto e provato: `AttachConsole(pid)` +
-  `WriteConsoleInput`.** Consegna i tasti a una console **per PID, senza rubare
-  il focus**, anche dentro Windows Terminal (ConPTY) e su TUI in raw-mode, e
-  perfino in una **tab in background**. È l'equivalente Windows di
-  `tmux send-keys -t`. Chiude il BUG bloccante della sessione 1.
+  `WriteConsoleInput`.** Consegna tasti a una console per PID, senza rubare
+  focus, anche in Windows Terminal (ConPTY), TUI raw-mode, e tab in
+  background. Equivalente Windows di `tmux send-keys -t`. Chiude il BUG
+  bloccante della sessione 1.
 - `SCOPERTA` — **Conferma via `AttachConsole(pid)` +
-  `ReadConsoleOutputCharacter`:** si rilegge lo schermo della sessione per PID
-  (focus-free) e si verifica dall'header che lo shift sia entrato. Diventa anche
-  la sorgente del "marcia corrente" per il cruscotto.
-- `SCOPERTA` — **Confermato dal vivo su una sessione reale:** `/effort low`
-  cambia l'header `high → low` istantaneamente; `/model sonnet` porta l'header
-  `Opus 4.8 → Sonnet 5` ma passa da una conferma **"Switch model?"**.
+  `ReadConsoleOutputCharacter`**: si rilegge lo schermo per PID
+  (focus-free), verifica dall'header che lo shift sia entrato. Diventa anche
+  sorgente del "marcia corrente" per il cruscotto.
+- `SCOPERTA` — **Confermato dal vivo:** `/effort low` cambia l'header
+  `high → low` istantaneamente; `/model sonnet` porta `Opus 4.8 → Sonnet 5`
+  ma passa da una conferma "Switch model?".
 - `SCOPERTA` — **Il warning sul costo di cache è nativo.** La conferma di
-  `/model` mostra già "This conversation is cached… full history gets re-read".
-  Il differenziatore di PROJECT §6 in parte esiste già: la GUI lo anticipa e
-  rilancia, non lo inventa.
+  `/model` mostra già "This conversation is cached… full history gets
+  re-read". Il differenziatore di PROJECT §6 in parte esiste già.
 - `SCOPERTA` — **Reset dell'effort per famiglia confermato dal vivo:**
   `settings.json` diceva `effortLevel: medium`, una sessione Sonnet 5 nuova
-  mostrava `high`. E `/model`/`/effort` **si salvano come default** in
+  mostrava `high`. `/model`/`/effort` si salvano come default in
   `settings.json` (i test l'hanno mutato; ripristinato a `sonnet`/`medium`).
-- `SETUP` — Salvato il prototipo provato in [`prototype/`](prototype/)
-  (`inject.py`, `screen_read.py`). Scritta la spec di build [SPEC.md](SPEC.md).
-  Eliminati `model selection.md` e `window selection.md`: contenuto utile
-  assorbito da SPEC.md/PROJECT.md.
+- `SETUP` — Salvato il prototipo provato in `prototype/` (`inject.py`,
+  `screen_read.py`). Scritta SPEC.md. Eliminati `model selection.md` e
+  `window selection.md` (contenuto assorbito).
 
 ---
 
@@ -612,39 +522,39 @@ stanno in [PROJECT.md](PROJECT.md).
 
 - `SETUP` — Repo collegato a GitHub (`matteoccll/claude_shifter`), clonato in
   `C:\Users\simon\Desktop\MODEL AND FURIOUS`, branch `main` da `fb34a0c`.
-  Cartella aperta in VS Code. `gh` CLI **non installato** sulla macchina.
-- `SCOPERTA` — Verificato sui doc ufficiali che i due assi del cambio esistono
-  già come comandi separati: `/model` (haiku, sonnet, opus, fable, default,
-  opusplan, best) e `/effort` (low, medium, high, xhigh, max, ultracode).
-  Conferma l'ipotesi "main box + splitter" di `model selection.md`.
-- `SCOPERTA` — Risolta la domanda aperta di `model selection.md:56`: l'effort è
-  **globale**, non per-marcia, ma viene **resettato per famiglia di modello**
-  (Fable 5 e Opus 4.8 → `high`, Opus 4.7 → `xhigh`, ignorando la scelta
-  precedente) e **scala** al livello più alto supportato se il modello non
-  regge quello richiesto. Quindi non tutte le combinazioni sono ingranabili.
+  Aperto in VS Code. `gh` CLI non installato.
+- `SCOPERTA` — Verificato sui doc ufficiali: i due assi esistono già come
+  comandi separati, `/model` (haiku, sonnet, opus, fable, default, opusplan,
+  best) e `/effort` (low, medium, high, xhigh, max, ultracode). Conferma
+  l'ipotesi "main box + splitter".
+- `SCOPERTA` — Risolta la domanda aperta di `model selection.md:56`: l'effort
+  è **globale**, non per-marcia, ma viene **resettato per famiglia di
+  modello** (Fable 5/Opus 4.8 → `high`, Opus 4.7 → `xhigh`, ignorando la
+  scelta precedente) e **scala** al livello più alto supportato se il modello
+  non regge quello richiesto. Non tutte le combinazioni sono ingranabili.
 - `SCOPERTA` — Confermati tutti i campi del cruscotto via statusline JSON:
   `model.display_name`, `context_window.remaining_percentage`,
-  `total_input_tokens`, `cost.total_cost_usd`, `session_id`, `transcript_path`,
-  `exceeds_200k_tokens`. Supporta multi-riga, ANSI e `refreshInterval: 1` →
-  il tach può aggiornarsi ogni secondo. Le voci marcate *inferred* in
+  `total_input_tokens`, `cost.total_cost_usd`, `session_id`,
+  `transcript_path`, `exceeds_200k_tokens`. Supporta multi-riga, ANSI,
+  `refreshInterval: 1` (aggiornamento al secondo). Le voci *inferred* di
   `model selection.md` (FUEL = contesto) risultano corrette.
-- `SCARTATO` — **Hook come attuatore.** Nessun hook può cambiare modello o
-  effort; `SessionStart` riceve il modello in input ma non esiste campo di
-  output per modificarlo. Strada chiusa, non riprovare.
+- `SCARTATO` — **Hook come attuatore.** Nessun hook cambia modello/effort;
+  `SessionStart` riceve il modello in input ma non ha campo di output per
+  modificarlo.
 - `SCARTATO` — **`model` in settings.json come attuatore.** Letto solo
-  all'avvio della sessione, inerte a caldo.
+  all'avvio, inerte a caldo.
 - `SCARTATO` — **Skill con frontmatter `model:`/`effort:` come leva.**
-  Funziona ma l'override dura **un solo turno**: è un kickdown, non una marcia
-  inserita. Eventualmente recuperabile come feature secondaria.
+  Funziona ma l'override dura un solo turno (kickdown, non marcia inserita).
+  Eventualmente recuperabile come feature secondaria.
 - `DECISIONE` — Architettura: **GUI esterna + injection da tastiera nel
-  terminale.** Motivo: `/model` e `/effort` digitati nel TTY sono l'**unico**
-  meccanismo che produce uno shift persistente. Scartato l'harness proprio su
-  Agent SDK perché equivale a riscrivere Claude Code invece di guidarlo.
-- `BUG` — **Aperto, bloccante.** L'attuatore richiede injection di tastiera, ma
-  la macchina è Windows 11 e tmux non esiste. Alternative: WSL + tmux, oppure
-  SendInput/AutoHotkey su Windows Terminal. La seconda non dà conferma
-  affidabile che il tasto sia atterrato nel pane giusto — cioè esattamente il
-  fallimento che `window selection.md` dichiara inaccettabile.
+  terminale.** Motivo: `/model` e `/effort` digitati nel TTY sono l'unico
+  meccanismo che produce uno shift persistente. Scartato l'harness su Agent
+  SDK (equivarrebbe a riscrivere Claude Code).
+- `BUG` — **Aperto, bloccante.** L'attuatore richiede injection di tastiera,
+  macchina Windows 11, tmux non esiste. Alternative: WSL+tmux, o
+  SendInput/AutoHotkey su Windows Terminal (non dà conferma affidabile che il
+  tasto sia atterrato nel pane giusto — il fallimento che
+  `window selection.md` dichiara inaccettabile).
 - `DECISIONE` — Creati `PROJECT.md` e `STORICO.md` come documenti guida, con
   obbligo esplicito di richiesta di aggiornamento a fine sessione.
 
