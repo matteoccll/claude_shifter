@@ -469,6 +469,41 @@ function ClosePopups {
 # app is running ("Effort: High", "Impegno: Alto"), leaving just the level.
 function StripEffort { param($s) ($s -replace '^[^:]{1,24}:\s*','').Trim() }
 
+# Wait for a tree change to materialise, returning the instant it does instead of
+# sleeping a fixed quantum and hoping.
+#
+# UIA popups render a beat after the call that triggers them (Expand, a hover).
+# That beat is short in the common case but stretches right after a model change,
+# when the app is still settling -- which is exactly the sporadic ~10s spike on
+# capabilities (sess. 14: "non e' la scansione, e' il menu che tarda a
+# comparire"). A flat Start-Sleep has to be long enough for the worst case, so it
+# pays the worst case EVERY time, rounding a 200ms render up to the full 900ms.
+#
+# PollFor checks once immediately (the action already happened and already
+# invalidated the walk), then sleeps a front-loaded schedule -- short waits first
+# because the popup is usually quick, longer waits later for the settling case --
+# stopping the moment $Check returns something truthy. The schedule's SUM equals
+# the old fixed budget, so a genuinely slow popup is no worse off and the spike
+# ceiling is unchanged; only the common case, which used to round up to the full
+# wait, gets its time back. $Check is re-run against a freshly invalidated walk
+# each time and hands its found element/count straight back to the caller.
+#
+# $Check reads the caller's locals (e.g. $before in OpenSubmenu): PollFor is
+# invoked BY that caller, so PowerShell's dynamic scope lookup walks up into it.
+function PollFor {
+    param([scriptblock]$Check, [int[]]$Schedule)
+    InvalidateWalk
+    $r = & $Check
+    if ($r) { return $r }
+    foreach ($ms in $Schedule) {
+        Start-Sleep -Milliseconds $ms
+        InvalidateWalk
+        $r = & $Check
+        if ($r) { return $r }
+    }
+    return $r
+}
+
 # -- Pointer ------------------------------------------------------------------
 # Some menu entries only respond to a real pointer. UIA gives us a clickable
 # point in screen coordinates; the process is marked DPI aware at startup so
@@ -619,29 +654,42 @@ function Op-DumpTree {
 # early go stale (their properties read back empty), so retry until the Slider
 # actually materialises rather than trusting a fixed sleep.
 #
-# The whole open is attempted twice. Seen live 2026-07-21 on Opus 4.8: one call
-# in a long sequence came back empty while the model demonstrably had its 0-5
-# slider, and ten calls either side of it succeeded. A popup that refuses to
-# open once is the same intermittent family as the "Altri modelli" submenu, and
-# a second attempt costs nothing when the first one worked.
+# The open is attempted more than once. Seen live 2026-07-21 on Opus 4.8: one
+# call in a long sequence came back empty while the model demonstrably had its
+# 0-5 slider, and ten calls either side of it succeeded. A popup that refuses to
+# open once is the same intermittent family as the "Altri modelli" submenu.
+#
+# Fail-fast-then-retry, not wait-then-retry. Measured live 2026-07-21 across 17
+# capabilities calls (6 of them the instant after a model change): the slider,
+# when it renders at all, renders in well under a second -- "effort popup ready
+# (try 0)" every time, ~800ms. So a popup that is going to open opens fast; a
+# long wait only ever sits on a STUCK one, and waiting does not unstick it -- the
+# close+reopen at the top of the next try does. The old shape (2 tries x ~4s)
+# therefore spent up to 8s doing nothing before the recovery that actually works,
+# which is the bulk of the sporadic ~10s capabilities spike (the rest being
+# listModels). Now: 3 tries with a ~1.3s budget each, so a stuck popup reaches
+# its recovering reopen at ~1.3s instead of ~4s, worst case ~4s instead of ~8s,
+# and one more recovery attempt than before. The common case is untouched --
+# PollFor returns on the first truthy check, so a fast slider still comes back in
+# ~800ms; only the budget that used to be burned on a stuck popup is shorter.
 #
 # An absent effort button is NOT retried: that is Haiku, a real state, not a
 # failure to read.
 function OpenEffortPopup {
-    for ($try = 0; $try -lt 2; $try++) {
+    for ($try = 0; $try -lt 3; $try++) {
         ClosePopups
         $eb = EffortBtn
         if (-not $eb) { return $null }
         if (-not (Expand $eb)) { Log "effort popup: expand refused (try $try)"; continue }
 
-        for ($i = 0; $i -lt 8; $i++) {
-            Start-Sleep -Milliseconds 500
-            InvalidateWalk
-            $sl = SliderEl
-            if ($sl) {
-                try { $null = $sl.Current.ControlType; Log "popup ready after $(($i+1)*500)ms"; return $sl } catch {}
-            }
-        }
+        # The staleness guard stays: a slider grabbed too early reads its
+        # properties back empty, so "found" is not enough -- it must answer a live
+        # ControlType read too.
+        $sl = PollFor {
+            $s = SliderEl
+            if ($s) { try { $null = $s.Current.ControlType; $s } catch { $false } } else { $false }
+        } @(120, 180, 260, 360, 420)
+        if ($sl) { Log "effort popup ready (try $try)"; return $sl }
         Log "effort popup: no slider after expand (try $try)"
     }
     return $null
@@ -777,12 +825,11 @@ function OpenModelPopup {
     $mb = ModelBtn
     if (-not $mb) { return $false }
     if (-not (Expand $mb)) { return $false }
-    for ($i = 0; $i -lt 8; $i++) {
-        Start-Sleep -Milliseconds 400
-        InvalidateWalk
-        if (@(ModelOptionRows).Count -gt 0) { return $true }
-    }
-    return $false
+    # Front-loaded poll, same ~3.2s budget as the old 8x400 loop.
+    $ok = PollFor {
+        if (@(ModelOptionRows).Count -gt 0) { $true } else { $false }
+    } @(80, 120, 180, 260, 360, 500, 700, 1000)
+    return [bool]$ok
 }
 
 # Three models (Opus 4.7, Opus 4.6, Sonnet 4.6) live behind an "Altri modelli"
@@ -830,14 +877,23 @@ function OpenSubmenu {
 
     foreach ($t in $tries) {
         try { & $t.act } catch { Log "  submenu $($t.name) threw: $($_.Exception.Message)"; continue }
-        Start-Sleep -Milliseconds 900
-        InvalidateWalk
-        $after = @(ModelOptionRows).Count
-        if ($after -gt $before) {
+        # Poll instead of a flat 900ms. This runs on EVERY capabilities call (the
+        # command always expands the submenu to list all seven models), and the
+        # submenu usually lands well under 900ms, so the flat wait was the single
+        # biggest recurring waste in capabilities. Same 900ms budget for the case
+        # where it does lag; the exotic "4 -> 0" (popup vanishes, sess. 8) still
+        # times out to a $false the same way, because the count never exceeds
+        # $before.
+        $after = PollFor {
+            $c = @(ModelOptionRows).Count
+            if ($c -gt $before) { $c } else { $false }
+        } @(120, 180, 250, 350)
+        if ($after) {
             Log "  submenu opened by $($t.name): $before -> $after options"
             return $true
         }
-        Log "  submenu $($t.name) did not add options ($before -> $after)"
+        $now = @(ModelOptionRows).Count
+        Log "  submenu $($t.name) did not add options ($before -> $now)"
     }
     return $false
 }
@@ -1102,14 +1158,23 @@ function SetSliderTo {
 function Op-Capabilities {
     $errors = New-Object System.Collections.Generic.List[string]
 
+    # Per-section timing on stderr. The ~10s spike after a model change had no
+    # named cause (sess. 14) because nothing recorded WHERE the time went. This
+    # does not slow anything down -- one Stopwatch, four Log lines -- and turns
+    # the next spike into a log that points straight at the slow section instead
+    # of a shrug. Reads as e.g. "capabilities: listModels at 2100ms".
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+
     $gear = $null
     try { $gear = Op-ReadGear } catch { $errors.Add("readGear: $($_.Exception.Message)") }
+    Log "capabilities: readGear at $($sw.ElapsedMilliseconds)ms"
     # Without the model button there is no lever at all, and every section below
     # depends on it. This one is fatal.
     if ($null -eq $gear) { throw "capabilities: model button not found (is a conversation open?)" }
 
     $models = @()
     try { $models = @(Op-ListModels) } catch { $errors.Add("listModels: $($_.Exception.Message)") }
+    Log "capabilities: listModels at $($sw.ElapsedMilliseconds)ms"
 
     if ($gear.hasEffort) {
         # The button is there, so the control exists whether or not the read works:
@@ -1132,6 +1197,7 @@ function Op-Capabilities {
         # render (the lever loses its splitter).
         $effort = @{ available = $false; hasControl = $false; reason = 'model has no effort control' }
     }
+    Log "capabilities: effortRange at $($sw.ElapsedMilliseconds)ms"
 
     $usage = $null
     try { $usage = Op-ReadUsage } catch { $errors.Add("readUsage: $($_.Exception.Message)") }
@@ -1155,6 +1221,7 @@ function Op-Capabilities {
     $gears = 0
     if ($effort.available) { $gears = [int]$effort.max - [int]$effort.min + 1 }
 
+    Log "capabilities: total $($sw.ElapsedMilliseconds)ms"
     @{
         model       = $gear.model
         effort      = $gear.effort
