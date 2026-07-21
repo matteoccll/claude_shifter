@@ -19,6 +19,27 @@ decisioni. Niente piani, niente intenzioni — quelli stanno in
 
 ---
 
+## 2026-07-21 (sessione 15 — backend: il submenu che sparisce si autocorregge)
+
+- `FIX` — **`setModel` e `listModels` ritentano da un popup fresco se il
+  submenu "Altri modelli" non si apre.** Causa del bug ignota (sess. 8, mai
+  trovata: `4 -> 0`, non riproducibile a comando). Prima un submenu fallito
+  faceva concludere "modello inesistente" (`setModel`) o restituiva
+  silenziosamente 4 modelli su 7 senza errore (`listModels`, stessa trappola
+  già chiusa per l'effort in sess. 11: "gears: 0, errors vuoto"). Ora
+  `ExpandModelSubmenus` distingue "nessun submenu da aprire" da "submenu
+  presente ma non aperto" (torna `{opened,failed}` invece di un contatore
+  nudo), e i due chiamanti ritentano una volta l'intera sequenza
+  apri-popup→espandi, stesso schema di `OpenEffortPopup` (sess. 8).
+- `SETUP` — Collaudato dal vivo: `test.js` M1 PASSATO (Sonnet 5/Alto,
+  `setModel`/`setEffort` andata-ritorno, stato ripristinato); collaudo
+  mirato su un modello nascosto dietro il submenu (Opus 4.7, mai Fable)
+  passato, submenu apertosi al primo hover in entrambe le run — il ramo di
+  retry non si è potuto esercitare, il bug resta non riproducibile a comando.
+- `BUG` — **Resta aperto, causa ancora ignota**: perché il submenu a volte
+  non si apre. Il fix di oggi rende il sintomo autocorrettivo, non ne
+  spiega l'origine; un secondo inciampo consecutivo resta possibile.
+
 ## 2026-07-21 (sessione 14 — backend: la lentezza, due fix misurati dal vivo)
 
 - `FIX` — **La scansione UIA pagava una chiamata cross-process per elemento.**

@@ -132,7 +132,7 @@ costruita su questa verità, non nascosta.
 | Bersaglio corretto (Claude Desktop MSIX) | ✅ |
 | Enumerazione conversazioni (UIA sidebar) | ✅ Provata |
 | Lettura modello/effort/telemetria | ✅ Provata — Usage in due formati (%, token), entrambi letti (sess. 7) |
-| Switch modello | ✅ Provato su 7 modelli, ripristino verificato — ⚠️ submenu "Altri modelli" a volte non si apre (§10) |
+| Switch modello | ✅ Provato su 7 modelli, ripristino verificato — ⚠️ submenu "Altri modelli" a volte non si apre, causa ignota, ora si ritenta da solo (sess. 15, §10) |
 | Switch effort | ✅ Provato su tutte le posizioni, ripristino verificato |
 | **Ladder effort completo** | ✅ Mappato dal vivo (§3.1), in `backend/gearbox.json`. Rimisurato sess. 8: identico |
 | Attuazione senza rubare il focus | 🟡 Letture focus-free ✅; switch alzano l'app ⚠️ |
@@ -172,8 +172,10 @@ Vincoli da progettare, non da aggirare:
   ~10 s dopo cambio modello. Serve uno stato "sto innestando" onesto; la
   scadenza per richiesta non annulla il lavoro del broker, smette solo di
   aspettarlo.
-- **Un `setModel` fallito non prova che il modello non esista** (bug
-  submenu, sotto): la GUI deve poter riprovare.
+- **Un `setModel` fallito non prova più (di regola) che il modello non
+  esista** (bug submenu, sotto): sess. 15 ha aggiunto un ritentativo
+  automatico da un popup fresco. La GUI può ancora trovarsi davanti un
+  fallimento vero se anche il secondo tentativo inciampa nello stesso bug.
 - **`gears: 0` da solo non basta**: guardare anche `effortRange.hasControl`
   o `errors`.
 
@@ -187,10 +189,14 @@ Le due metà del riaggancio sono provate **separatamente**, non insieme
 ottenibile su questa macchina; `detachtest.js` chiude il cerchio da fuori
 Claude.
 
-**Bug aperto senza causa nota (sess. 8)**: il submenu "Altri modelli" a volte
-non si apre (`4 -> 0` nel log, menu sparisce invece di espandersi). Non
-riproducibile a comando. Conseguenza: `setModel` fallito ≠ modello
-inesistente.
+**Bug aperto senza causa nota (sess. 8), sintomo attenuato in sess. 15**: il
+submenu "Altri modelli" a volte non si apre (`4 -> 0` nel log, menu sparisce
+invece di espandersi). Non riproducibile a comando — la causa resta ignota.
+`setModel`/`listModels` ora ritentano una volta l'intera sequenza
+apri-popup→espandi da zero prima di arrendersi (stesso schema di
+`OpenEffortPopup`), il che assorbe la maggior parte dei casi osservati finora,
+ma non è una correzione della causa: un secondo inciampo consecutivo resta
+possibile e la GUI deve saperlo.
 
 ### Idee raccolte — frontend / GUI
 
