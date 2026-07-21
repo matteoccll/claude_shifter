@@ -121,57 +121,86 @@ $script:pid0   = [uint32]0
 $script:walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
 $A             = [System.Windows.Automation.AutomationElement]
 
+# One CacheRequest, reused for every walk. The whole point of the tree cache is
+# to stop paying a cross-process round-trip per element: GetUpdatedCache pulls
+# the entire subtree AND the two properties we filter on (Name, ControlType) in
+# a single marshalled call, after which .Cached.* and .CachedChildren are read
+# from a local snapshot for free. See Walk for why this replaced the old
+# GetFirstChild/GetNextSibling walk.
+#
+# AutomationElementMode.Full keeps the returned handles live-capable: the same
+# element is later actuated (Expand, Select, SetValue) and re-read live for
+# verification, so the cache must not downgrade it to a properties-only husk.
+# TreeFilter is the control view, matching the ControlViewWalker used before, so
+# the set of elements a walk sees is unchanged -- only how fast it sees them.
+$script:cacheReq = New-Object System.Windows.Automation.CacheRequest
+$script:cacheReq.Add([System.Windows.Automation.AutomationElement]::NameProperty)
+$script:cacheReq.Add([System.Windows.Automation.AutomationElement]::ControlTypeProperty)
+$script:cacheReq.TreeScope            = [System.Windows.Automation.TreeScope]::Subtree
+$script:cacheReq.AutomationElementMode = [System.Windows.Automation.AutomationElementMode]::Full
+$script:cacheReq.TreeFilter           = [System.Windows.Automation.Automation]::ControlViewCondition
+
 # -- Tree walk ----------------------------------------------------------------
 # Returns elements in document order: the sidebar comes before the main pane,
 # which is what lets us prefer a sidebar entry over a same-named element
 # elsewhere in the window.
 #
-# Every property read is a cross-process call, so a full walk of this app costs
-# roughly a second. Finder functions each call Walk, and an operation calls
-# several finders, which made single commands take minutes and hang the caller.
-# The result is therefore cached and explicitly invalidated whenever we do
-# something that can change the tree.
+# This walk used to navigate the tree by hand -- GetFirstChild / GetNextSibling
+# per node, then a live Name and ControlType read per node -- and every one of
+# those was a cross-process call, so a full walk of this ~1000-element app cost
+# roughly a second. A finder calls Walk, and an operation calls several finders;
+# `capabilities` alone walks the tree a dozen-plus times, which is where its
+# seconds went.
+#
+# Now GetUpdatedCache pulls the whole subtree, with Name and ControlType, in a
+# single marshalled call (see $script:cacheReq), and the DFS below reads it all
+# from the local snapshot: .CachedChildren for structure, .Cached.* for the two
+# properties, zero further round-trips. Same elements, same document order (the
+# stack pushes children last-first so the first child is popped first, exactly
+# as the old hand walk did) -- just built in one call instead of thousands.
+#
+# The result is still cached per command and explicitly invalidated whenever we
+# do something that can change the tree, because even one round-trip is worth
+# not repeating between finders.
 $script:walkCache = $null
 
 function InvalidateWalk { $script:walkCache = $null }
 
-function WalkFrom {
-    param($start)
-    $list  = New-Object System.Collections.Generic.List[object]
-    if (-not $start) { return $list }
-    $stack = New-Object System.Collections.Stack
-    $stack.Push($start)
-    $n = 0
-    while ($stack.Count -gt 0 -and $n -lt 12000) {
-        $el = $stack.Pop(); $n++; $list.Add($el)
-        $kids = New-Object System.Collections.Generic.List[object]
-        try {
-            $ch = $script:walker.GetFirstChild($el)
-            while ($null -ne $ch) {
-                $kids.Add($ch)
-                try   { $ch = $script:walker.GetNextSibling($ch) }
-                catch { $ch = $null }
-            }
-        } catch {}
-        for ($i = $kids.Count - 1; $i -ge 0; $i--) { $stack.Push($kids[$i]) }
-    }
-    return $list
-}
-
 function Ct   { param($e) try { $e.Current.ControlType.ProgrammaticName -replace '^ControlType\.','' } catch { '' } }
 function Nm   { param($e) try { if ($null -eq $e.Current.Name) { '' } else { $e.Current.Name } } catch { '' } }
 
-# Walk returns rows, not bare elements: control type and name are read once
-# during the walk and carried along. Reading them per-filter instead meant
-# thousands of cross-process property reads per command.
-#   .El = the AutomationElement, .Ct = control type, .Nm = name
+# Read the cached Name/ControlType off an element pulled by GetUpdatedCache.
+# These never touch the wire; the properties were fetched with the subtree.
+function CtCached { param($e) try { $e.Cached.ControlType.ProgrammaticName -replace '^ControlType\.','' } catch { '' } }
+function NmCached { param($e) try { $v = $e.Cached.Name; if ($null -eq $v) { '' } else { $v } } catch { '' } }
+
+# Walk returns rows, not bare elements: control type and name travel with each
+# element so filters read them without another cross-process hit.
+#   .El = the AutomationElement (live-capable), .Ct = control type, .Nm = name
 function Walk {
     if ($null -ne $script:walkCache) { return $script:walkCache }
     if (-not $script:root) { return @() }
+
     $rows = New-Object System.Collections.Generic.List[object]
-    foreach ($e in (WalkFrom $script:root)) {
-        $rows.Add([pscustomobject]@{ El = $e; Ct = (Ct $e); Nm = (Nm $e) })
+
+    # One round-trip: the whole control-view subtree plus Name and ControlType.
+    $cachedRoot = $null
+    try { $cachedRoot = $script:root.GetUpdatedCache($script:cacheReq) } catch { return $rows }
+    if (-not $cachedRoot) { return $rows }
+
+    $stack = New-Object System.Collections.Stack
+    $stack.Push($cachedRoot)
+    $n = 0
+    while ($stack.Count -gt 0 -and $n -lt 12000) {
+        $el = $stack.Pop(); $n++
+        $rows.Add([pscustomobject]@{ El = $el; Ct = (CtCached $el); Nm = (NmCached $el) })
+        $kids = $null
+        try { $kids = $el.CachedChildren } catch {}
+        if ($kids) {
+            for ($i = $kids.Count - 1; $i -ge 0; $i--) { $stack.Push($kids[$i]) }
+        }
     }
+
     $script:walkCache = $rows
     return $rows
 }
@@ -777,14 +806,25 @@ function IsSubmenuRow {
 # Judge success by whether more model options actually appeared, not by whether
 # the call returned without error: ExpandCollapse reports success on this
 # MenuItem while doing nothing, because the submenu is pointer driven.
+#
+# Order matters for speed. This submenu is pointer driven on the live app, so
+# ExpandCollapse has NEVER opened it here -- it returns success while adding
+# nothing, and every attempt costs a fixed 900ms wait that yields "4 -> 4". It
+# is the physical hover that brings the three hidden models home, every time.
+# So hover goes first and ExpandCollapse drops to a fallback: on this machine
+# that saves ~900ms per capabilities (which always expands the submenu to list
+# all seven models), and it costs nothing where hover works. ExpandCollapse is
+# kept as a fallback rather than removed: on a headless or mouseless host where
+# hover cannot land, it may be the only handle -- the ordering is a speed
+# choice, not a claim that ExpandCollapse is useless everywhere.
 function OpenSubmenu {
     param($row)
     $before = @(ModelOptionRows).Count
 
     $tries = @(
+        @{ name = 'hover';  act = { HoverElement $row.El } },
         @{ name = 'ExpandCollapse'; act = {
             $row.El.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern).Expand() } },
-        @{ name = 'hover';  act = { HoverElement $row.El } },
         @{ name = 'click';  act = { ClickElement $row.El } }
     )
 
