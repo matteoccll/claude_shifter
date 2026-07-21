@@ -22,13 +22,16 @@ sul menu modello dell'app.
 
 GUI desktop autonoma che pilota Claude Desktop:
 
-- una **leva-cambio** + **tendina** per scegliere la conversazione bersaglio
-  (una leva, molte conversazioni);
+- un **widget d'angolo** (finestra nostra, sempre in vista, appoggiata sopra
+  Claude) che **segue la conversazione attiva** — la chat si sceglie dalla
+  **barra nativa di Claude**, non da una nostra tendina (vedi §4, decisione
+  2026-07-21);
 - **leva principale** → modello, **splitter** → effort;
 - **cruscotto** con telemetria reale (context %, plan %).
 
 Successo = cambiare marcia **guardando la strada**, sapendo su quale
-conversazione si agisce prima di agire.
+conversazione si agisce prima di agire — il widget mostra sempre l'etichetta
+della chat su cui sta per agire.
 
 ## 3. La meccanica reale (verificata dal vivo il 2026-07-20)
 
@@ -96,8 +99,9 @@ non-italiane non sono verificabili su questa macchina).
 |---|---|
 | **Attuatore da terminale (console injection)** | **RIBALTATO** — funzionante ma sul bersaglio sbagliato (Claude Code CLI). Materiale archiviato. |
 | API/canale supportato | Non documentato per cambio a caldo. Si pilota la GUI. |
-| Estensione web / injection nel renderer | Scartato: fragile / bersaglio sbagliato. |
-| Una leva per sessione | Scartato: caos. Una leva + tendina. |
+| Estensione web / injection nel renderer | Scartato: fragile / bersaglio sbagliato. Vale anche per "icona dentro la finestra di Claude": il widget è una **finestra nostra separata appoggiata sopra**, non un elemento iniettato in Claude. |
+| Una leva per sessione | Scartato: caos. Una leva sola. |
+| **Tendina per scegliere la chat** (dentro la nostra finestra) | **SCARTATO 2026-07-21** a favore del **widget d'angolo che segue la chat attiva**. Motivo: per l'utente medio l'attore principale è la chat, che naviga già dalla barra nativa di Claude — la tendina era un doppione. La leva resta una sola; agisce sulla conversazione attiva. |
 
 ## 5. Il cruscotto
 
@@ -150,7 +154,7 @@ costruita su questa verità, non nascosta.
 | L'attuazione non ruba il puntatore | ✅ Rimesso dov'era (scarto 0 px) |
 | Spec di build | ✅ [SPEC.md](SPEC.md) (⚠️ §2/§4.1 superati da sess. 5, vedi §3 qui) |
 | Prototipo UIA | ✅ [`prototype/`](prototype/) |
-| GUI (frontend) | ⬜ In carico all'altro collaboratore — via libera dalla leva + cruscotto sulla conversazione attiva (sess. 11) |
+| GUI (frontend) | ⬜ In carico all'altro collaboratore — via libera dalla leva + cruscotto sulla conversazione attiva (sess. 11). **Forma decisa (2026-07-21): widget d'angolo che segue la chat attiva, niente tendina** (§4) |
 
 ---
 
@@ -161,9 +165,10 @@ sess. 14. Via libera al frontend.
 
 ### Cosa può fare il frontend, adesso
 
-Si parte **dalla leva e dal cruscotto sulla conversazione attiva**, non dalla
-tendina: `capabilities` è provata e stabile, copre le due forme della leva (6
-marce / Haiku senza splitter), ed espone gli eventi
+Si parte **dalla leva e dal cruscotto sulla conversazione attiva** — che è
+anche la forma finale decisa (widget d'angolo, niente tendina, §4):
+`capabilities` è provata e stabile, copre le due forme della leva (6 marce /
+Haiku senza splitter), ed espone gli eventi
 `attached`/`reattached`/`detached`.
 
 Vincoli da progettare, non da aggirare:
@@ -180,10 +185,14 @@ Vincoli da progettare, non da aggirare:
 - **`gears: 0` da solo non basta**: guardare anche `effortRange.hasControl`
   o `errors`.
 
-La tendina è più vicina (sess. 12: `selectSession` conferma `{title}`,
-`enumerate` ha visto 2 conversazioni), ma resta aperta la verifica *forte*
-del bersaglio e il rischio di match per suffisso in `SessionEntries`
-(rimandati apposta in sess. 7, prematuri finché non c'era la GUI).
+La **tendina è scartata** (decisione 2026-07-21, §4): la chat si sceglie dalla
+barra nativa di Claude e il widget segue quella attiva. `selectSession` /
+`enumerate` non servono più al flusso base — restano disponibili nel broker
+come funzioni opzionali. Quel che invece **resta necessario** è che il widget
+sappia *quale* chat è attiva per mostrarne l'etichetta: quindi la verifica
+*forte* del bersaglio (e il rischio di match per suffisso in `SessionEntries`,
+rimandati in sess. 7) va comunque chiusa, ora sulla lettura della chat attiva
+più che sulla selezione da tendina.
 
 Le due metà del riaggancio sono provate **separatamente**, non insieme
 (chiudere l'app per davvero chiuderebbe anche chi collauda) — è il massimo
